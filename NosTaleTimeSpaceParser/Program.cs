@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using NosTaleTimeSpaceParser.Parsers;
 using NosTaleTimeSpaceParser.Models.PacketModels;
+using NosTaleTimeSpaceParser.Services;
 
 namespace NosTaleTimeSpaceParser
 {
@@ -116,6 +117,32 @@ namespace NosTaleTimeSpaceParser
             Console.WriteLine($"  PREQ (Prerequisites): {preqPackets.Count}");
             Console.WriteLine($"  OUT (Disappear): {outPackets.Count}");
             Console.WriteLine($"  Others: {otherPackets.Count}");
+
+            // Show unparsed packets
+            if (otherPackets.Count > 0)
+            {
+                Console.WriteLine($"\nUNPARSED PACKETS:");
+                foreach (var packet in otherPackets)
+                {
+                    Console.WriteLine($"  {packet}");
+                }
+            }
+
+            Console.WriteLine();
+
+            // Generate XML
+            Console.WriteLine("=== GENERATING XML ===");
+            var analyzer = new TimeSpaceAnalyzer();
+            var model = analyzer.Analyze(lines.ToList());
+
+            var xmlGenerator = new XmlGenerator();
+            var xml = xmlGenerator.GenerateXml(model);
+
+            Console.WriteLine("Generated XML:");
+            Console.WriteLine(xml);
+
+            // Save to file
+            xmlGenerator.SaveXml(model, "generated_timespace.xml");
             Console.WriteLine();
 
             // Show samples of each packet type
