@@ -1,6 +1,7 @@
 ﻿using NosTaleTimeSpaceParser.Models.PacketModels;
 using NosTaleTimeSpaceParser.Models.XmlModels;
 using NosTaleTimeSpaceParser.Parsers;
+using ScriptedInstanceModel.Models.ScriptedInstance;
 
 namespace NosTaleTimeSpaceParser.Services
 {
@@ -9,13 +10,15 @@ namespace NosTaleTimeSpaceParser.Services
         private List<string> _packets;
         private ScriptedInstanceModel _model;
         private Dictionary<int, CreateMap> _maps;
-        private int _currentMapIndex = -1;
+        private Dictionary<int, List<string>> _mapPackets;
+        private string? _descriptionLine;
 
         public TimeSpaceAnalyzer()
         {
             _packets = new List<string>();
             _model = new ScriptedInstanceModel();
             _maps = new Dictionary<int, CreateMap>();
+            _mapPackets = new Dictionary<int, List<string>>();
         }
 
         public ScriptedInstanceModel Analyze(List<string> packets)
@@ -23,68 +26,79 @@ namespace NosTaleTimeSpaceParser.Services
             _packets = packets;
             _model = new ScriptedInstanceModel();
             _maps = new Dictionary<int, CreateMap>();
+            _mapPackets = new Dictionary<int, List<string>>();
 
-            Console.WriteLine("Starting Time Space analysis...");
-
-            ParseGlobals();
-            IdentifyMaps();
-            AnalyzeEvents();
+            ExtractDescriptionLine();
+            ParseGlobalsFromRbr();
+            IdentifyMapsFromAtPackets();
+            AssignPacketsToMaps();
+            GenerateMapEvents();
             FinalizeModel();
 
-            Console.WriteLine($"Analysis complete. Found {_maps.Count} maps.");
             return _model;
         }
 
-        private void ParseGlobals()
+        private void ExtractDescriptionLine()
         {
-            string rbrPacket = "";
-            string descriptionLine = "";
-
             for (int i = 0; i < _packets.Count; i++)
             {
-                if (RbrPacketParser.CanParse(_packets[i]))
+                if (RbrPacketParser.CanParse(_packets[i]) && i + 1 < _packets.Count)
                 {
-                    rbrPacket = _packets[i];
-                    if (i + 1 < _packets.Count && !_packets[i + 1].StartsWith("su "))
+                    var nextLine = _packets[i + 1].Trim();
+                    if (!nextLine.StartsWith("su ") && !string.IsNullOrEmpty(nextLine) && !IsPacketLine(nextLine))
                     {
-                        descriptionLine = _packets[i + 1].Trim();
+                        _descriptionLine = nextLine;
                     }
                     break;
                 }
             }
+        }
 
-            if (!string.IsNullOrEmpty(rbrPacket))
+        private bool IsPacketLine(string line)
+        {
+            var packetPrefixes = new[] { "at ", "in ", "gp ", "msg ", "walk ", "su ", "eff ", "evnt ", "npc_req ", "out ", "preq", "rsfn ", "rsfm ", "rsfp " };
+            return packetPrefixes.Any(prefix => line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void ParseGlobalsFromRbr()
+        {
+            foreach (var packet in _packets)
             {
-                var rbr = RbrPacketParser.Parse(rbrPacket);
-
-                _model.Globals.Name.Value = rbr.Name;
-                _model.Globals.Label.Value = !string.IsNullOrEmpty(descriptionLine) ? descriptionLine : rbr.Label;
-                _model.Globals.LevelMinimum.Value = rbr.LevelMinimum.ToString();
-                _model.Globals.LevelMaximum.Value = rbr.LevelMaximum.ToString();
-                _model.Globals.Lives.Value = "1";
-                _model.Globals.Gold.Value = "1500";
-                _model.Globals.Reputation.Value = "50";
-
-                foreach (var item in rbr.DrawItems)
+                if (RbrPacketParser.CanParse(packet))
                 {
-                    _model.Globals.DrawItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
-                }
+                    var rbr = RbrPacketParser.Parse(packet);
 
-                foreach (var item in rbr.SpecialItems)
-                {
-                    _model.Globals.SpecialItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
-                }
+                    _model.Globals.Name.Value = rbr.Name;
+                    _model.Globals.Label.Value = !string.IsNullOrEmpty(_descriptionLine) ? _descriptionLine : rbr.Label;
+                    _model.Globals.LevelMinimum.Value = rbr.LevelMinimum.ToString();
+                    _model.Globals.LevelMaximum.Value = rbr.LevelMaximum.ToString();
 
-                foreach (var item in rbr.GiftItems)
-                {
-                    _model.Globals.GiftItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
-                }
+                    // Valeurs par défaut pour les champs manquants dans RbrPacket
+                    _model.Globals.Lives.Value = "1";
+                    _model.Globals.Gold.Value = "1500";
+                    _model.Globals.Reputation.Value = "50";
 
-                Console.WriteLine($"Parsed globals: {rbr.Name}");
+                    foreach (var item in rbr.DrawItems)
+                    {
+                        _model.Globals.DrawItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
+                    }
+
+                    foreach (var item in rbr.SpecialItems)
+                    {
+                        _model.Globals.SpecialItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
+                    }
+
+                    foreach (var item in rbr.GiftItems)
+                    {
+                        _model.Globals.GiftItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
+                    }
+
+                    break;
+                }
             }
         }
 
-        private void IdentifyMaps()
+        private void IdentifyMapsFromAtPackets()
         {
             int mapIndex = 0;
 
@@ -99,72 +113,171 @@ namespace NosTaleTimeSpaceParser.Services
                         Map = mapIndex,
                         VNum = at.GridMapId,
                         IndexX = 3,
-                        IndexY = 11 - mapIndex,
-                        OnCharacterDiscoveringMap = new OnCharacterDiscoveringMap(),
-                        OnMoveOnMap = new OnMoveOnMap()
+                        IndexY = 11 - mapIndex
                     };
 
                     _maps[mapIndex] = createMap;
-                    Console.WriteLine($"Found map {mapIndex}: VNum {at.GridMapId}");
+                    _mapPackets[mapIndex] = new List<string>();
+
                     mapIndex++;
                 }
             }
         }
 
-        private void AnalyzeEvents()
+        private void AssignPacketsToMaps()
         {
+            int currentMapIndex = -1;
+
             for (int i = 0; i < _packets.Count; i++)
             {
                 var packet = _packets[i];
 
                 if (AtPacketParser.CanParse(packet))
                 {
-                    _currentMapIndex = FindMapIndexByPacketIndex(i);
-                    if (_currentMapIndex >= 0)
-                    {
-                        AnalyzeOnCharacterDiscoveringMap(i);
-                    }
+                    currentMapIndex++;
+                    continue;
                 }
-                else if (WalkPacketParser.CanParse(packet))
+
+                if (currentMapIndex >= 0 && _mapPackets.ContainsKey(currentMapIndex))
                 {
-                    if (_currentMapIndex >= 0 && IsFirstWalkAfterAt(i))
-                    {
-                        AnalyzeOnMoveOnMap(i);
-                    }
+                    _mapPackets[currentMapIndex].Add(packet);
                 }
             }
         }
 
-        private void AnalyzeOnCharacterDiscoveringMap(int atIndex)
+        private void GenerateMapEvents()
         {
-            if (_currentMapIndex < 0 || !_maps.ContainsKey(_currentMapIndex)) return;
-
-            var map = _maps[_currentMapIndex];
-            var discovering = map.OnCharacterDiscoveringMap!;
-
-            for (int i = atIndex + 1; i < Math.Min(atIndex + 20, _packets.Count); i++)
+            foreach (var mapKvp in _maps)
             {
-                var packet = _packets[i];
+                int mapIndex = mapKvp.Key;
+                var map = mapKvp.Value;
+                var packets = _mapPackets[mapIndex];
 
-                if (WalkPacketParser.CanParse(packet) || AtPacketParser.CanParse(packet))
-                    break;
+                AnalyzeMapPackets(map, packets, mapIndex);
+            }
+        }
 
-                if (NpcReqPacketParser.CanParse(packet))
+        private void AnalyzeMapPackets(CreateMap map, List<string> packets, int mapIndex)
+        {
+            ProcessPortals(map, packets, mapIndex);
+
+            var discoveringPackets = new List<string>();
+            var moveOnMapPackets = new List<string>();
+            bool inMovePhase = false;
+
+            for (int i = 0; i < packets.Count; i++)
+            {
+                var packet = packets[i];
+
+                if (WalkPacketParser.CanParse(packet) && !inMovePhase)
+                {
+                    inMovePhase = true;
+                    continue;
+                }
+
+                if (inMovePhase)
+                    moveOnMapPackets.Add(packet);
+                else
+                    discoveringPackets.Add(packet);
+            }
+
+            if (discoveringPackets.Any())
+            {
+                map.OnCharacterDiscoveringMap = new OnCharacterDiscoveringMap();
+                ProcessDiscoveringPhase(map.OnCharacterDiscoveringMap, discoveringPackets, packets, mapIndex);
+            }
+
+            if (moveOnMapPackets.Any())
+            {
+                map.OnMoveOnMap = new OnMoveOnMap();
+                ProcessMovePhase(map.OnMoveOnMap, moveOnMapPackets, packets, mapIndex);
+            }
+        }
+
+        private void ProcessPortals(CreateMap map, List<string> packets, int mapIndex)
+        {
+            var processedPortals = new HashSet<string>();
+
+            foreach (var packet in packets)
+            {
+                if (GpPacketParser.CanParse(packet))
+                {
+                    var gp = GpPacketParser.Parse(packet);
+                    var portalKey = $"{gp.PortalId}_{gp.SourceX}_{gp.SourceY}";
+
+                    if (processedPortals.Contains(portalKey))
+                        continue;
+
+                    processedPortals.Add(portalKey);
+
+                    int toMap = CalculateToMap(gp, mapIndex);
+                    int toX = gp.SourceX;
+                    int toY = gp.SourceY == 1 ? 28 : 1;
+
+                    var portal = new SpawnPortal
+                    {
+                        IdOnMap = gp.PortalId,
+                        PositionX = gp.SourceX,
+                        PositionY = gp.SourceY,
+                        Type = gp.Type,
+                        ToMap = toMap,
+                        ToX = toX,
+                        ToY = toY
+                    };
+
+                    if (gp.Type == 5)
+                    {
+                        portal.ToMap = -1;
+                        portal.OnTraversal = new OnTraversal();
+                        portal.OnTraversal.Ends.Add(new EndElement { Type = 5 });
+                    }
+
+                    map.SpawnPortals.Add(portal);
+                }
+            }
+        }
+
+        private int CalculateToMap(GpPacket gp, int currentMapIndex)
+        {
+            if (gp.Type == 5) return -1;
+
+            if (gp.SourceY == 1)
+                return currentMapIndex + 1 < _maps.Count ? currentMapIndex + 1 : currentMapIndex;
+            else if (gp.SourceY == 28)
+                return currentMapIndex > 0 ? currentMapIndex - 1 : currentMapIndex;
+
+            return currentMapIndex;
+        }
+
+        private void ProcessDiscoveringPhase(OnCharacterDiscoveringMap discovering, List<string> packets, List<string> allPackets, int mapIndex)
+        {
+            for (int i = 0; i < packets.Count; i++)
+            {
+                var packet = packets[i];
+
+                if (MsgPacketParser.CanParse(packet))
+                {
+                    var msg = MsgPacketParser.Parse(packet);
+                    discovering.SendMessages.Add(new SendMessage
+                    {
+                        Value = msg.Message,
+                        Type = msg.Type
+                    });
+                }
+                else if (NpcReqPacketParser.CanParse(packet))
                 {
                     var npcReq = NpcReqPacketParser.Parse(packet);
                     discovering.NpcDialogs.Add(new ValueAttribute { Value = npcReq.DialogId.ToString() });
                 }
-                else if (MsgPacketParser.CanParse(packet))
+                else if (packet.Trim().StartsWith("sinfo ") || packet.Trim().StartsWith("rsfm "))
                 {
-                    var msg = MsgPacketParser.Parse(packet);
-                    discovering.SendMessages.Add(new SendMessage { Value = msg.Message, Type = msg.Type });
+                    discovering.SendPackets.Add(new ValueAttribute { Value = packet.Trim() });
                 }
                 else if (InPacketParser.CanParse(packet))
                 {
                     var inPacket = InPacketParser.Parse(packet);
 
-                    // NPC detection (especially guard VNum 320)
-                    if (inPacket.EntityType == EntityType.Npc || inPacket.VNum == 320)
+                    if (inPacket.EntityType == EntityType.Npc)
                     {
                         var npc = new SummonNpc
                         {
@@ -172,100 +285,64 @@ namespace NosTaleTimeSpaceParser.Services
                             PositionX = inPacket.PositionX,
                             PositionY = inPacket.PositionY,
                             Move = true,
-                            IsProtected = inPacket.VNum == 320
+                            IsProtected = DetermineIsProtected(inPacket, allPackets, packets, i)
                         };
 
-                        if (inPacket.VNum == 320)
+                        var onDeath = DetectNpcOnDeath(inPacket, allPackets, packets, i);
+                        if (onDeath != null)
                         {
-                            npc.OnDeath = new OnDeath();
+                            npc.OnDeath = onDeath;
                         }
 
                         discovering.SummonNpcs.Add(npc);
-                        Console.WriteLine($"Detected NPC: VNum {inPacket.VNum} at ({inPacket.PositionX},{inPacket.PositionY})");
                     }
-                    // Button detection for Map 3
-                    else if (inPacket.EntityType == EntityType.Object && _currentMapIndex == 3)
+                    else if (inPacket.EntityType == EntityType.Object)
                     {
                         var button = new SpawnButton
                         {
                             Id = inPacket.EntityId,
                             PositionX = inPacket.PositionX,
                             PositionY = inPacket.PositionY,
-                            VNumEnabled = inPacket.VNum == 1045 ? 1045 : 1000,
-                            VNumDisabled = inPacket.VNum == 1045 ? 1000 : 1045
+                            VNumEnabled = inPacket.VNum,
+                            VNumDisabled = FindAlternateVNum(inPacket, allPackets, i)
                         };
 
-                        // Add OnFirstEnable with OnMapClean for Map 3 button
                         button.OnFirstEnable = new OnFirstEnable();
-                        button.OnFirstEnable.SendMessages.Add(new SendMessage
-                        {
-                            Value = "The lever has been actuated.",
-                            Type = 0
-                        });
-                        button.OnFirstEnable.SummonMonsters.Add(new SummonMonster
-                        {
-                            VNum = 24,
-                            PositionX = 20,
-                            PositionY = 15,
-                            Move = true,
-                            IsHostile = true
-                        });
-                        button.OnFirstEnable.SummonMonsters.Add(new SummonMonster
-                        {
-                            VNum = 24,
-                            PositionX = 5,
-                            PositionY = 15,
-                            Move = true,
-                            IsHostile = true
-                        });
-                        button.OnFirstEnable.OnMapClean = new OnMapClean();
-                        button.OnFirstEnable.OnMapClean.ChangePortalTypes.Add(new ChangePortalType { IdOnMap = 2, Type = 2 });
-                        button.OnFirstEnable.OnMapClean.RefreshMapItems.Add(new object());
-                        button.OnFirstEnable.OnMapClean.SendMessages.Add(new SendMessage { Value = "A door has been opened.", Type = 0 });
-                        button.OnFirstEnable.OnMapClean.NpcDialogs.Add(new ValueAttribute { Value = "8009" });
-
                         discovering.SpawnButtons.Add(button);
-                        Console.WriteLine($"Detected Button: Id {button.Id} at ({button.PositionX},{button.PositionY})");
                     }
-                }
-                else if (GpPacketParser.CanParse(packet))
-                {
-                    var gp = GpPacketParser.Parse(packet);
-                    int destMap = GetDestinationMap(gp.SourceX, gp.SourceY);
-                    var (toX, toY) = GetPortalDestination(gp.SourceX, gp.SourceY);
-
-                    discovering.SpawnPortals.Add(new SpawnPortal
-                    {
-                        IdOnMap = gp.PortalId,
-                        PositionX = gp.SourceX,
-                        PositionY = gp.SourceY,
-                        Type = gp.Type,
-                        ToMap = destMap,
-                        ToX = toX,
-                        ToY = toY
-                    });
                 }
             }
         }
 
-        private void AnalyzeOnMoveOnMap(int walkIndex)
+        private void ProcessMovePhase(OnMoveOnMap moveOnMap, List<string> packets, List<string> allPackets, int mapIndex)
         {
-            if (_currentMapIndex < 0 || !_maps.ContainsKey(_currentMapIndex)) return;
-
-            var map = _maps[_currentMapIndex];
-            var moveOnMap = map.OnMoveOnMap!;
-            var monsters = new List<(SummonMonster monster, int packetIndex)>();
-
-            for (int i = walkIndex + 1; i < Math.Min(walkIndex + 50, _packets.Count); i++)
+            for (int i = 0; i < packets.Count; i++)
             {
-                var packet = _packets[i];
+                var packet = packets[i];
 
-                if (AtPacketParser.CanParse(packet))
-                    break;
-
-                if (InPacketParser.CanParse(packet))
+                if (MsgPacketParser.CanParse(packet))
+                {
+                    var msg = MsgPacketParser.Parse(packet);
+                    moveOnMap.SendMessages.Add(new SendMessage
+                    {
+                        Value = msg.Message,
+                        Type = msg.Type
+                    });
+                }
+                else if (packet.Trim().StartsWith("sinfo ") || packet.Trim().StartsWith("rsfm "))
+                {
+                    moveOnMap.SendPackets.Add(new ValueAttribute { Value = packet.Trim() });
+                }
+                else if (EvntPacketParser.CanParse(packet))
+                {
+                    var evnt = EvntPacketParser.Parse(packet);
+                    moveOnMap.GenerateClocks.Add(new ValueAttribute { Value = evnt.Time1.ToString() });
+                    moveOnMap.StartClocks.Add(new object());
+                }
+                else if (InPacketParser.CanParse(packet))
                 {
                     var inPacket = InPacketParser.Parse(packet);
+
                     if (inPacket.EntityType == EntityType.Monster)
                     {
                         var monster = new SummonMonster
@@ -274,215 +351,213 @@ namespace NosTaleTimeSpaceParser.Services
                             PositionX = inPacket.PositionX,
                             PositionY = inPacket.PositionY,
                             Move = true,
-                            IsBonus = true,
-                            IsHostile = true
+                            IsBonus = DetermineIsBonus(inPacket, allPackets, packets, i),
+                            IsHostile = true,
+                            IsTarget = false,
+                            IsBoss = false,
+                            IsMeteorite = false,
+                            Damage = 0,
+                            NoticeRange = 0,
+                            HasDelay = 0
                         };
 
-                        monsters.Add((monster, i));
-                    }
-                }
-                else if (MsgPacketParser.CanParse(packet))
-                {
-                    var msg = MsgPacketParser.Parse(packet);
-                    moveOnMap.SendMessages.Add(new SendMessage { Value = msg.Message, Type = msg.Type });
-                }
-                else if (EvntPacketParser.CanParse(packet))
-                {
-                    var evnt = EvntPacketParser.Parse(packet);
-                    moveOnMap.GenerateClocks.Add(new ValueAttribute { Value = evnt.Time1.ToString() });
-                    moveOnMap.StartClocks.Add(new object());
-                }
-            }
-
-            // Handle monsters based on map
-            if (_currentMapIndex == 5)
-            {
-                // Map 5: OnMapClean logic
-                foreach (var (monster, _) in monsters)
-                {
-                    moveOnMap.SummonMonsters.Add(monster);
-                }
-
-                moveOnMap.OnMapClean = new OnMapClean();
-                moveOnMap.OnMapClean.ChangePortalTypes.Add(new ChangePortalType { IdOnMap = 2, Type = 2 });
-                moveOnMap.OnMapClean.RefreshMapItems.Add(new object());
-                moveOnMap.OnMapClean.SendPackets.Add(new ValueAttribute { Value = "sinfo  " });
-                moveOnMap.OnMapClean.SendMessages.Add(new SendMessage { Value = "A door has been opened.", Type = 0 });
-                moveOnMap.OnMapClean.SendMessages.Add(new SendMessage { Value = "The NosVille's guard is safe!", Type = 0 });
-                moveOnMap.OnMapClean.NpcDialogs.Add(new ValueAttribute { Value = "8010" });
-            }
-            else
-            {
-                // Other maps: OnDeath chains or individual OnDeath
-                AnalyzeMonsterDeathChains(monsters, moveOnMap);
-            }
-        }
-
-        private void AnalyzeMonsterDeathChains(List<(SummonMonster monster, int packetIndex)> monsters, OnMoveOnMap moveOnMap)
-        {
-            var processedMonsters = new HashSet<int>();
-
-            for (int i = 0; i < monsters.Count; i++)
-            {
-                if (processedMonsters.Contains(i)) continue;
-
-                var currentMonster = monsters[i];
-                bool hasOnDeath = false;
-
-                // Look for sequential monster spawns to detect death chains
-                for (int j = i + 1; j < monsters.Count; j++)
-                {
-                    if (processedMonsters.Contains(j)) continue;
-
-                    var nextMonster = monsters[j];
-
-                    if (nextMonster.packetIndex > currentMonster.packetIndex &&
-                        nextMonster.packetIndex < currentMonster.packetIndex + 15)
-                    {
-                        bool foundDeathIndicator = HasDeathIndicator(currentMonster.packetIndex, nextMonster.packetIndex);
-
-                        if (foundDeathIndicator)
+                        var onDeath = DetectMonsterOnDeath(inPacket, allPackets, packets, i);
+                        if (onDeath != null)
                         {
-                            currentMonster.monster.OnDeath = new OnDeath();
-                            currentMonster.monster.OnDeath.SummonMonsters.Add(nextMonster.monster);
-                            hasOnDeath = true;
-                            processedMonsters.Add(j);
-
-                            Console.WriteLine($"Detected OnDeath chain: Monster {currentMonster.monster.VNum} -> Monster {nextMonster.monster.VNum}");
-                            break;
+                            monster.OnDeath = onDeath;
                         }
-                    }
-                }
 
-                // If no monster chain, look for other OnDeath events
-                if (!hasOnDeath)
-                {
-                    var onDeath = AnalyzeMonsterDeathEvents(currentMonster.packetIndex);
-                    if (onDeath != null)
+                        moveOnMap.SummonMonsters.Add(monster);
+                    }
+                    else if (inPacket.EntityType == EntityType.Npc)
                     {
-                        currentMonster.monster.OnDeath = onDeath;
+                        var npc = new SummonNpc
+                        {
+                            VNum = inPacket.VNum,
+                            PositionX = inPacket.PositionX,
+                            PositionY = inPacket.PositionY,
+                            Move = true,
+                            IsProtected = DetermineIsProtected(inPacket, allPackets, packets, i)
+                        };
+
+                        var onDeath = DetectNpcOnDeath(inPacket, allPackets, packets, i);
+                        if (onDeath != null)
+                        {
+                            npc.OnDeath = onDeath;
+                        }
+
+                        moveOnMap.SummonNpcs.Add(npc);
                     }
                 }
-
-                moveOnMap.SummonMonsters.Add(currentMonster.monster);
-                processedMonsters.Add(i);
             }
         }
 
-        private bool HasDeathIndicator(int startIndex, int endIndex)
+        private bool DetermineIsProtected(InPacket npcPacket, List<string> allPackets, List<string> phasePackets, int index)
         {
-            for (int k = startIndex + 1; k < endIndex && k < _packets.Count; k++)
+            for (int i = Math.Max(0, index - 5); i < Math.Min(phasePackets.Count, index + 10); i++)
             {
-                if (SuPacketParser.CanParse(_packets[k]) ||
-                    EffPacketParser.CanParse(_packets[k]) ||
-                    OutPacketParser.CanParse(_packets[k]))
+                if (MsgPacketParser.CanParse(phasePackets[i]))
+                {
+                    var msg = MsgPacketParser.Parse(phasePackets[i]);
+                    if (msg.Message.ToLower().Contains("protect") || msg.Message.ToLower().Contains("guard"))
+                    {
+                        return true;
+                    }
+                }
+                else if (phasePackets[i].Contains("sinfo") &&
+                        (phasePackets[i].ToLower().Contains("protect") || phasePackets[i].ToLower().Contains("guard")))
                 {
                     return true;
                 }
             }
+
             return false;
         }
 
-        private OnDeath? AnalyzeMonsterDeathEvents(int monsterPacketIndex)
+        private OnDeath? DetectNpcOnDeath(InPacket npcPacket, List<string> allPackets, List<string> phasePackets, int index)
         {
-            var onDeath = new OnDeath();
-            bool foundEvents = false;
-            var processedMessages = new HashSet<string>();
-            var processedDialogs = new HashSet<string>();
-
-            for (int i = monsterPacketIndex + 1; i < Math.Min(monsterPacketIndex + 30, _packets.Count); i++)
+            if (DetermineIsProtected(npcPacket, allPackets, phasePackets, index))
             {
-                var packet = _packets[i];
+                var onDeath = new OnDeath();
+                onDeath.Ends.Add(new EndElement { Type = 2 });
+                return onDeath;
+            }
 
-                if (GpPacketParser.CanParse(packet))
+            return null;
+        }
+
+        private bool DetermineIsBonus(InPacket monsterPacket, List<string> allPackets, List<string> phasePackets, int index)
+        {
+            for (int i = Math.Max(0, index - 3); i < Math.Min(phasePackets.Count, index + 8); i++)
+            {
+                if (SuPacketParser.CanParse(phasePackets[i]))
                 {
-                    var gp = GpPacketParser.Parse(packet);
-                    if (gp.Type == 2 && !onDeath.ChangePortalTypes.Any(cp => cp.IdOnMap == 2 && cp.Type == 2))
+                    var su = SuPacketParser.Parse(phasePackets[i]);
+                    if (Math.Abs(su.PositionX - monsterPacket.PositionX) <= 3 &&
+                        Math.Abs(su.PositionY - monsterPacket.PositionY) <= 3)
                     {
-                        onDeath.ChangePortalTypes.Add(new ChangePortalType { IdOnMap = 2, Type = 2 });
+                        return false;
+                    }
+                }
+            }
 
-                        if (!onDeath.RefreshMapItems.Any())
+            return true;
+        }
+
+        private OnDeath? DetectMonsterOnDeath(InPacket monsterPacket, List<string> allPackets, List<string> phasePackets, int index)
+        {
+            var processedPortals = new HashSet<int>();
+            var processedMessages = new HashSet<string>();
+            var processedDialogs = new HashSet<int>();
+            bool foundEvents = false;
+            var onDeath = new OnDeath();
+
+            for (int i = index + 1; i < Math.Min(phasePackets.Count, index + 25); i++)
+            {
+                if (SuPacketParser.CanParse(phasePackets[i]))
+                {
+                    var su = SuPacketParser.Parse(phasePackets[i]);
+                    if (Math.Abs(su.PositionX - monsterPacket.PositionX) <= 3 &&
+                        Math.Abs(su.PositionY - monsterPacket.PositionY) <= 3)
+                    {
+                        for (int j = i + 1; j < Math.Min(phasePackets.Count, i + 20); j++)
                         {
-                            onDeath.RefreshMapItems.Add(new object());
-                        }
-                        foundEvents = true;
-                    }
-                }
-                else if (MsgPacketParser.CanParse(packet))
-                {
-                    var msg = MsgPacketParser.Parse(packet);
-                    if (msg.Message.Contains("door has been opened") && !processedMessages.Contains(msg.Message))
-                    {
-                        onDeath.SendMessages.Add(new SendMessage { Value = msg.Message, Type = msg.Type });
-                        processedMessages.Add(msg.Message);
-                        foundEvents = true;
-                    }
-                }
-                else if (NpcReqPacketParser.CanParse(packet))
-                {
-                    var npcReq = NpcReqPacketParser.Parse(packet);
-                    if (!processedDialogs.Contains(npcReq.DialogId.ToString()))
-                    {
-                        onDeath.NpcDialogs.Add(new ValueAttribute { Value = npcReq.DialogId.ToString() });
-                        processedDialogs.Add(npcReq.DialogId.ToString());
-                        foundEvents = true;
-                    }
-                }
+                            var packet = phasePackets[j];
 
-                if (AtPacketParser.CanParse(packet))
-                    break;
+                            if (InPacketParser.CanParse(packet))
+                            {
+                                var inPacket = InPacketParser.Parse(packet);
+                                if (inPacket.EntityType == EntityType.Monster)
+                                {
+                                    onDeath.SummonMonsters.Add(new SummonMonster
+                                    {
+                                        VNum = inPacket.VNum,
+                                        PositionX = inPacket.PositionX,
+                                        PositionY = inPacket.PositionY,
+                                        Move = true,
+                                        IsBonus = true,
+                                        IsHostile = true,
+                                        IsTarget = false,
+                                        IsBoss = false,
+                                        IsMeteorite = false,
+                                        Damage = 0,
+                                        NoticeRange = 0,
+                                        HasDelay = 0
+                                    });
+                                    foundEvents = true;
+                                }
+                            }
+                            else if (GpPacketParser.CanParse(packet))
+                            {
+                                var gp = GpPacketParser.Parse(packet);
+                                if (gp.Type >= 2 && !processedPortals.Contains(gp.PortalId))
+                                {
+                                    onDeath.ChangePortalTypes.Add(new ChangePortalType
+                                    {
+                                        IdOnMap = gp.PortalId,
+                                        Type = gp.Type
+                                    });
+                                    onDeath.RefreshMapItems.Add(new object());
+                                    processedPortals.Add(gp.PortalId);
+                                    foundEvents = true;
+                                }
+                            }
+                            else if (MsgPacketParser.CanParse(packet))
+                            {
+                                var msg = MsgPacketParser.Parse(packet);
+                                if (!processedMessages.Contains(msg.Message))
+                                {
+                                    onDeath.SendMessages.Add(new SendMessage
+                                    {
+                                        Value = msg.Message,
+                                        Type = msg.Type
+                                    });
+                                    processedMessages.Add(msg.Message);
+                                    foundEvents = true;
+                                }
+                            }
+                            else if (NpcReqPacketParser.CanParse(packet))
+                            {
+                                var npcReq = NpcReqPacketParser.Parse(packet);
+                                if (!processedDialogs.Contains(npcReq.DialogId))
+                                {
+                                    onDeath.NpcDialogs.Add(new ValueAttribute
+                                    {
+                                        Value = npcReq.DialogId.ToString()
+                                    });
+                                    processedDialogs.Add(npcReq.DialogId);
+                                    foundEvents = true;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
             }
 
             return foundEvents ? onDeath : null;
         }
 
-        private int GetDestinationMap(int sourceX, int sourceY)
+        private int FindAlternateVNum(InPacket objectPacket, List<string> packets, int startIndex)
         {
-            if (sourceX == 14 && sourceY == 1)
-                return _currentMapIndex + 1 < _maps.Count ? _currentMapIndex + 1 : -1;
-            else if (sourceX == 14 && sourceY == 28)
-                return _currentMapIndex > 0 ? _currentMapIndex - 1 : -1;
-
-            return -1;
-        }
-
-        private (int toX, int toY) GetPortalDestination(int sourceX, int sourceY)
-        {
-            if (sourceX == 14 && sourceY == 1)
-                return (14, 28);
-            else if (sourceX == 14 && sourceY == 28)
-                return (14, 1);
-
-            return (14, 28);
-        }
-
-        private int FindMapIndexByPacketIndex(int packetIndex)
-        {
-            int count = 0;
-            for (int i = 0; i < packetIndex; i++)
+            for (int i = startIndex + 1; i < Math.Min(packets.Count, startIndex + 15); i++)
             {
-                if (AtPacketParser.CanParse(_packets[i]))
-                    count++;
+                if (InPacketParser.CanParse(packets[i]))
+                {
+                    var inPacket = InPacketParser.Parse(packets[i]);
+                    if (inPacket.EntityId == objectPacket.EntityId && inPacket.VNum != objectPacket.VNum)
+                    {
+                        return inPacket.VNum;
+                    }
+                }
             }
-            return count;
-        }
 
-        private bool IsFirstWalkAfterAt(int walkIndex)
-        {
-            for (int i = walkIndex - 1; i >= 0; i--)
-            {
-                if (AtPacketParser.CanParse(_packets[i]))
-                    return true;
-                if (WalkPacketParser.CanParse(_packets[i]))
-                    return false;
-            }
-            return false;
+            return 1000; // Fallback générique sans hardcode spécifique
         }
 
         private void FinalizeModel()
         {
             _model.InstanceEvents.CreateMaps = _maps.Values.OrderBy(m => m.Map).ToList();
-            Console.WriteLine($"Finalized model with {_model.InstanceEvents.CreateMaps.Count} maps");
         }
     }
 }

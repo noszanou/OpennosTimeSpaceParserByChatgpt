@@ -86,14 +86,14 @@ namespace NosTaleTimeSpaceParser.Models.XmlModels
         [XmlAttribute("IndexY")]
         public int IndexY { get; set; }
 
+        [XmlElement("SpawnPortal")]
+        public List<SpawnPortal> SpawnPortals { get; set; } = new List<SpawnPortal>();
+
         [XmlElement("OnCharacterDiscoveringMap")]
         public OnCharacterDiscoveringMap? OnCharacterDiscoveringMap { get; set; }
 
         [XmlElement("OnMoveOnMap")]
         public OnMoveOnMap? OnMoveOnMap { get; set; }
-
-        [XmlElement("SpawnPortal")]
-        public List<SpawnPortal> SpawnPortals { get; set; } = new List<SpawnPortal>();
 
         [XmlElement("SpawnButton")]
         public List<SpawnButton> SpawnButtons { get; set; } = new List<SpawnButton>();
@@ -107,20 +107,68 @@ namespace NosTaleTimeSpaceParser.Models.XmlModels
         [XmlElement("SendMessage")]
         public List<SendMessage> SendMessages { get; set; } = new List<SendMessage>();
 
-        [XmlElement("SpawnPortal")]
-        public List<SpawnPortal> SpawnPortals { get; set; } = new List<SpawnPortal>();
+        [XmlElement("SendPacket")]
+        public List<ValueAttribute> SendPackets { get; set; } = new List<ValueAttribute>();
 
         [XmlElement("SummonNpc")]
         public List<SummonNpc> SummonNpcs { get; set; } = new List<SummonNpc>();
 
+        [XmlElement("SummonMonster")]
+        public List<SummonMonster> SummonMonsters { get; set; } = new List<SummonMonster>();
+
+        [XmlElement("SpawnPortal")]
+        public List<SpawnPortal> SpawnPortals { get; set; } = new List<SpawnPortal>();
+
         [XmlElement("SpawnButton")]
         public List<SpawnButton> SpawnButtons { get; set; } = new List<SpawnButton>();
+
+        [XmlElement("GenerateMapClock")]
+        public List<ValueAttribute> GenerateMapClocks { get; set; } = new List<ValueAttribute>();
+
+        [XmlElement("GenerateClock")]
+        public List<ValueAttribute> GenerateClocks { get; set; } = new List<ValueAttribute>();
+
+        [XmlElement("StartClock")]
+        public List<object> StartClocks { get; set; } = new List<object>();
+
+        [XmlElement("StartMapClock")]
+        public List<StartMapClock> StartMapClocks { get; set; } = new List<StartMapClock>();
+
+        [XmlElement("StopClock")]
+        public List<object> StopClocks { get; set; } = new List<object>();
+
+        [XmlElement("StopMapClock")]
+        public List<object> StopMapClocks { get; set; } = new List<object>();
+
+        [XmlElement("OnMoveOnMap")]
+        public OnMoveOnMap? OnMoveOnMap { get; set; }
+
+        [XmlElement("OnMapClean")]
+        public OnMapClean? OnMapClean { get; set; }
+
+        [XmlElement("SetButtonLockers")]
+        public List<object> SetButtonLockers { get; set; } = new List<object>();
+
+        [XmlElement("SetMonsterLockers")]
+        public List<object> SetMonsterLockers { get; set; } = new List<object>();
+
+        [XmlElement("Wave")]
+        public List<object> Waves { get; set; } = new List<object>();
+
+        [XmlElement("RefreshRaidGoals")]
+        public List<object> RefreshRaidGoals { get; set; } = new List<object>();
+
+        [XmlElement("Effect")]
+        public List<object> Effects { get; set; } = new List<object>();
     }
 
     public class OnMoveOnMap
     {
         [XmlElement("SendMessage")]
         public List<SendMessage> SendMessages { get; set; } = new List<SendMessage>();
+
+        [XmlElement("SendPacket")]
+        public List<ValueAttribute> SendPackets { get; set; } = new List<ValueAttribute>();
 
         [XmlElement("SummonMonster")]
         public List<SummonMonster> SummonMonsters { get; set; } = new List<SummonMonster>();
@@ -134,17 +182,38 @@ namespace NosTaleTimeSpaceParser.Models.XmlModels
         [XmlElement("StartClock")]
         public List<object> StartClocks { get; set; } = new List<object>();
 
-        [XmlElement("OnMapClean")]
-        public OnMapClean? OnMapClean { get; set; }
-
-        [XmlElement("SendPacket")]
-        public List<ValueAttribute> SendPackets { get; set; } = new List<ValueAttribute>();
-
         [XmlElement("GenerateMapClock")]
         public List<ValueAttribute> GenerateMapClocks { get; set; } = new List<ValueAttribute>();
 
         [XmlElement("StartMapClock")]
         public List<StartMapClock> StartMapClocks { get; set; } = new List<StartMapClock>();
+
+        [XmlElement("StopClock")]
+        public List<object> StopClocks { get; set; } = new List<object>();
+
+        [XmlElement("StopMapClock")]
+        public List<object> StopMapClocks { get; set; } = new List<object>();
+
+        [XmlElement("OnMapClean")]
+        public OnMapClean? OnMapClean { get; set; }
+
+        [XmlElement("RefreshRaidGoals")]
+        public List<object> RefreshRaidGoals { get; set; } = new List<object>();
+
+        [XmlElement("RemoveButtonLocker")]
+        public List<object> RemoveButtonLockers { get; set; } = new List<object>();
+
+        [XmlElement("RemoveMonsterLocker")]
+        public List<object> RemoveMonsterLockers { get; set; } = new List<object>();
+
+        [XmlElement("SetButtonLockers")]
+        public List<object> SetButtonLockers { get; set; } = new List<object>();
+
+        [XmlElement("SetMonsterLockers")]
+        public List<object> SetMonsterLockers { get; set; } = new List<object>();
+
+        [XmlElement("Wave")]
+        public List<object> Waves { get; set; } = new List<object>();
     }
 
     public class StartMapClock
@@ -214,6 +283,18 @@ namespace NosTaleTimeSpaceParser.Models.XmlModels
 
         [XmlAttribute("ToY")]
         public int ToY { get; set; }
+
+        [XmlElement("OnTraversal")]
+        public OnTraversal? OnTraversal { get; set; }
+    }
+
+    public class OnTraversal
+    {
+        [XmlElement("End")]
+        public List<EndElement> Ends { get; set; } = new List<EndElement>();
+
+        [XmlElement("NpcDialog")]
+        public List<ValueAttribute> NpcDialogs { get; set; } = new List<ValueAttribute>();
     }
 
     public class SummonMonster
@@ -236,8 +317,44 @@ namespace NosTaleTimeSpaceParser.Models.XmlModels
         [XmlAttribute("IsHostile")]
         public bool IsHostile { get; set; }
 
+        [XmlAttribute("IsTarget")]
+        public bool IsTarget { get; set; }
+
+        [XmlAttribute("IsBoss")]
+        public bool IsBoss { get; set; }
+
+        [XmlAttribute("IsMeteorite")]
+        public bool IsMeteorite { get; set; }
+
+        [XmlAttribute("Damage")]
+        public int Damage { get; set; }
+
+        [XmlAttribute("NoticeRange")]
+        public int NoticeRange { get; set; }
+
+        [XmlAttribute("HasDelay")]
+        public int HasDelay { get; set; }
+
         [XmlElement("OnDeath")]
         public OnDeath? OnDeath { get; set; }
+
+        [XmlElement("OnNoticing")]
+        public OnNoticing? OnNoticing { get; set; }
+
+        [XmlElement("Roam")]
+        public Roam? Roam { get; set; }
+
+        [XmlElement("SendMessage")]
+        public List<SendMessage> SendMessages { get; set; } = new List<SendMessage>();
+
+        [XmlElement("UseSkillOnDamage")]
+        public List<UseSkillOnDamage> UseSkillOnDamages { get; set; } = new List<UseSkillOnDamage>();
+
+        [XmlElement("Effect")]
+        public Effect? Effect { get; set; }
+
+        [XmlElement("RemoveAfter")]
+        public RemoveAfter? RemoveAfter { get; set; }
     }
 
     public class SummonNpc
@@ -266,17 +383,59 @@ namespace NosTaleTimeSpaceParser.Models.XmlModels
         [XmlElement("SummonMonster")]
         public List<SummonMonster> SummonMonsters { get; set; } = new List<SummonMonster>();
 
+        [XmlElement("SummonNpc")]
+        public List<SummonNpc> SummonNpcs { get; set; } = new List<SummonNpc>();
+
         [XmlElement("ChangePortalType")]
         public List<ChangePortalType> ChangePortalTypes { get; set; } = new List<ChangePortalType>();
 
         [XmlElement("SendMessage")]
         public List<SendMessage> SendMessages { get; set; } = new List<SendMessage>();
 
+        [XmlElement("SendPacket")]
+        public List<ValueAttribute> SendPackets { get; set; } = new List<ValueAttribute>();
+
         [XmlElement("NpcDialog")]
         public List<ValueAttribute> NpcDialogs { get; set; } = new List<ValueAttribute>();
 
         [XmlElement("RefreshMapItems")]
         public List<object> RefreshMapItems { get; set; } = new List<object>();
+
+        [XmlElement("RefreshRaidGoals")]
+        public List<object> RefreshRaidGoals { get; set; } = new List<object>();
+
+        [XmlElement("RemoveButtonLocker")]
+        public List<object> RemoveButtonLockers { get; set; } = new List<object>();
+
+        [XmlElement("RemoveMonsterLocker")]
+        public List<object> RemoveMonsterLockers { get; set; } = new List<object>();
+
+        [XmlElement("StopClock")]
+        public List<object> StopClocks { get; set; } = new List<object>();
+
+        [XmlElement("StopMapClock")]
+        public List<object> StopMapClocks { get; set; } = new List<object>();
+
+        [XmlElement("AddClockTime")]
+        public List<AddClockTime> AddClockTimes { get; set; } = new List<AddClockTime>();
+
+        [XmlElement("AddMapClockTime")]
+        public List<AddClockTime> AddMapClockTimes { get; set; } = new List<AddClockTime>();
+
+        [XmlElement("ThrowItem")]
+        public List<ThrowItem> ThrowItems { get; set; } = new List<ThrowItem>();
+
+        [XmlElement("Wave")]
+        public List<object> Waves { get; set; } = new List<object>();
+
+        [XmlElement("StopMapWaves")]
+        public List<object> StopMapWaves { get; set; } = new List<object>();
+
+        [XmlElement("ClearMapMonsters")]
+        public List<object> ClearMapMonsters { get; set; } = new List<object>();
+
+        [XmlElement("End")]
+        public List<EndElement> Ends { get; set; } = new List<EndElement>();
     }
 
     public class ChangePortalType
@@ -307,6 +466,12 @@ namespace NosTaleTimeSpaceParser.Models.XmlModels
 
         [XmlElement("OnFirstEnable")]
         public OnFirstEnable? OnFirstEnable { get; set; }
+
+        [XmlElement("OnEnable")]
+        public OnEnable? OnEnable { get; set; }
+
+        [XmlElement("OnDisable")]
+        public OnDisable? OnDisable { get; set; }
     }
 
     public class OnFirstEnable
@@ -329,13 +494,23 @@ namespace NosTaleTimeSpaceParser.Models.XmlModels
         [XmlElement("SendMessage")]
         public List<SendMessage> SendMessages { get; set; } = new List<SendMessage>();
 
+        [XmlElement("SendPacket")]
+        public List<ValueAttribute> SendPackets { get; set; } = new List<ValueAttribute>();
+
         [XmlElement("NpcDialog")]
         public List<ValueAttribute> NpcDialogs { get; set; } = new List<ValueAttribute>();
 
         [XmlElement("RefreshMapItems")]
         public List<object> RefreshMapItems { get; set; } = new List<object>();
-
-        [XmlElement("SendPacket")]
-        public List<ValueAttribute> SendPackets { get; set; } = new List<ValueAttribute>();
     }
+
+    public class OnNoticing { }
+    public class Roam { }
+    public class UseSkillOnDamage { }
+    public class Effect { }
+    public class RemoveAfter { }
+    public class AddClockTime { }
+    public class ThrowItem { }
+    public class OnEnable { }
+    public class OnDisable { }
 }
