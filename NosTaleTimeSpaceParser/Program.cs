@@ -50,7 +50,7 @@ namespace NosTaleTimeSpaceParser
             xmlGenerator.SaveXml(model, "timespace.xml");
 
             Console.WriteLine($"Generated XML for: {model.Globals.Name.Value}");
-            Console.WriteLine($"Maps found: {model.InstanceEvents.CreateMaps.Count}");
+            Console.WriteLine($"Maps found: {model.InstanceEvents.CreateMap.Length}");
         }
     }
 }

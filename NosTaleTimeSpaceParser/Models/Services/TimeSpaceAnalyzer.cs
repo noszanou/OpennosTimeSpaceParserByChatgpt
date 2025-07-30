@@ -1,14 +1,15 @@
 ﻿using NosTaleTimeSpaceParser.Models.PacketModels;
-using NosTaleTimeSpaceParser.Models.XmlModels;
 using NosTaleTimeSpaceParser.Parsers;
 using ScriptedInstanceModel.Models.ScriptedInstance;
+using ScriptedInstanceModel.Objects;
+using ScriptedInstanceModel.Events;
 
 namespace NosTaleTimeSpaceParser.Services
 {
     public class TimeSpaceAnalyzer
     {
         private List<string> _packets;
-        private ScriptedInstanceModel _model;
+        private ScriptedInstanceModel.Models.ScriptedInstance.ScriptedInstanceModel _model;
         private Dictionary<int, CreateMap> _maps;
         private Dictionary<int, List<string>> _mapPackets;
         private string? _descriptionLine;
@@ -16,15 +17,17 @@ namespace NosTaleTimeSpaceParser.Services
         public TimeSpaceAnalyzer()
         {
             _packets = new List<string>();
-            _model = new ScriptedInstanceModel();
+            _model = new ScriptedInstanceModel.Models.ScriptedInstance.ScriptedInstanceModel();
             _maps = new Dictionary<int, CreateMap>();
             _mapPackets = new Dictionary<int, List<string>>();
         }
 
-        public ScriptedInstanceModel Analyze(List<string> packets)
+        public ScriptedInstanceModel.Models.ScriptedInstance.ScriptedInstanceModel Analyze(List<string> packets)
         {
             _packets = packets;
-            _model = new ScriptedInstanceModel();
+            _model = new ScriptedInstanceModel.Models.ScriptedInstance.ScriptedInstanceModel();
+            _model.Globals = new Globals();
+            _model.InstanceEvents = new InstanceEvent();
             _maps = new Dictionary<int, CreateMap>();
             _mapPackets = new Dictionary<int, List<string>>();
 
@@ -68,30 +71,47 @@ namespace NosTaleTimeSpaceParser.Services
                 {
                     var rbr = RbrPacketParser.Parse(packet);
 
-                    _model.Globals.Name.Value = rbr.Name;
-                    _model.Globals.Label.Value = !string.IsNullOrEmpty(_descriptionLine) ? _descriptionLine : rbr.Label;
-                    _model.Globals.LevelMinimum.Value = rbr.LevelMinimum.ToString();
-                    _model.Globals.LevelMaximum.Value = rbr.LevelMaximum.ToString();
+                    _model.Globals.Name = new Name { Value = rbr.Name };
+                    _model.Globals.Label = new Label { Value = !string.IsNullOrEmpty(_descriptionLine) ? _descriptionLine : rbr.Label };
+                    _model.Globals.LevelMinimum = new Level { Value = (byte)rbr.LevelMinimum };
+                    _model.Globals.LevelMaximum = new Level { Value = (byte)rbr.LevelMaximum };
+                    _model.Globals.Lives = new Lives { Value = 1 };
 
-                    // Valeurs par défaut pour les champs manquants dans RbrPacket
-                    _model.Globals.Lives.Value = "1";
-                    _model.Globals.Gold.Value = "1500";
-                    _model.Globals.Reputation.Value = "50";
-
+                    var drawItems = new List<Item>();
                     foreach (var item in rbr.DrawItems)
                     {
-                        _model.Globals.DrawItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
+                        drawItems.Add(new Item
+                        {
+                            VNum = (short)item.VNum,
+                            Amount = (short)item.Amount
+                        });
                     }
+                    _model.Globals.DrawItems = drawItems.ToArray();
 
+                    var specialItems = new List<Item>();
                     foreach (var item in rbr.SpecialItems)
                     {
-                        _model.Globals.SpecialItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
+                        specialItems.Add(new Item
+                        {
+                            VNum = (short)item.VNum,
+                            Amount = (short)item.Amount
+                        });
                     }
+                    _model.Globals.SpecialItems = specialItems.ToArray();
 
+                    var giftItems = new List<Item>();
                     foreach (var item in rbr.GiftItems)
                     {
-                        _model.Globals.GiftItems.Items.Add(new ItemElement { VNum = item.VNum, Amount = item.Amount });
+                        giftItems.Add(new Item
+                        {
+                            VNum = (short)item.VNum,
+                            Amount = (short)item.Amount
+                        });
                     }
+                    _model.Globals.GiftItems = giftItems.ToArray();
+
+                    _model.Globals.Gold = new Gold { Value = 1500 };
+                    _model.Globals.Reputation = new Reputation { Value = 50 };
 
                     break;
                 }
@@ -111,9 +131,9 @@ namespace NosTaleTimeSpaceParser.Services
                     var createMap = new CreateMap
                     {
                         Map = mapIndex,
-                        VNum = at.GridMapId,
+                        VNum = (short)at.GridMapId,
                         IndexX = 3,
-                        IndexY = 11 - mapIndex
+                        IndexY = (byte)(11 - mapIndex)
                     };
 
                     _maps[mapIndex] = createMap;
@@ -159,11 +179,14 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void AnalyzeMapPackets(CreateMap map, List<string> packets, int mapIndex)
         {
-            ProcessPortals(map, packets, mapIndex);
-
             var discoveringPackets = new List<string>();
             var moveOnMapPackets = new List<string>();
             bool inMovePhase = false;
+
+            if (mapIndex > 0)
+            {
+                ProcessPortalsDirectly(map, packets, mapIndex);
+            }
 
             for (int i = 0; i < packets.Count; i++)
             {
@@ -181,22 +204,34 @@ namespace NosTaleTimeSpaceParser.Services
                     discoveringPackets.Add(packet);
             }
 
+            map.OnCharacterDiscoveringMap = new OnCharacterDiscoveringMap();
+
+            if (mapIndex == 0)
+            {
+                ProcessPortalsForDiscovering(map.OnCharacterDiscoveringMap, packets, mapIndex);
+            }
+
             if (discoveringPackets.Any())
             {
-                map.OnCharacterDiscoveringMap = new OnCharacterDiscoveringMap();
                 ProcessDiscoveringPhase(map.OnCharacterDiscoveringMap, discoveringPackets, packets, mapIndex);
             }
 
+            ProcessButtons(map, packets);
+
             if (moveOnMapPackets.Any())
             {
-                map.OnMoveOnMap = new OnMoveOnMap();
-                ProcessMovePhase(map.OnMoveOnMap, moveOnMapPackets, packets, mapIndex);
+                var onMoveOnMapList = new List<OnMoveOnMap>();
+                var onMoveOnMap = new OnMoveOnMap();
+                ProcessMovePhase(onMoveOnMap, moveOnMapPackets, packets, mapIndex);
+                onMoveOnMapList.Add(onMoveOnMap);
+                map.OnMoveOnMap = onMoveOnMapList.ToArray();
             }
         }
 
-        private void ProcessPortals(CreateMap map, List<string> packets, int mapIndex)
+        private void ProcessPortalsDirectly(CreateMap map, List<string> packets, int mapIndex)
         {
             var processedPortals = new HashSet<string>();
+            var portalsList = new List<SpawnPortal>();
 
             foreach (var packet in packets)
             {
@@ -210,31 +245,118 @@ namespace NosTaleTimeSpaceParser.Services
 
                     processedPortals.Add(portalKey);
 
+                    byte idOnMap = gp.SourceY == 1 ? (byte)0 : (byte)2;
+
                     int toMap = CalculateToMap(gp, mapIndex);
                     int toX = gp.SourceX;
                     int toY = gp.SourceY == 1 ? 28 : 1;
 
                     var portal = new SpawnPortal
                     {
-                        IdOnMap = gp.PortalId,
-                        PositionX = gp.SourceX,
-                        PositionY = gp.SourceY,
-                        Type = gp.Type,
-                        ToMap = toMap,
-                        ToX = toX,
-                        ToY = toY
+                        IdOnMap = idOnMap,
+                        PositionX = (short)gp.SourceX,
+                        PositionY = (short)gp.SourceY,
+                        Type = (short)gp.Type,
+                        ToMap = (short)toMap,
+                        ToX = (short)toX,
+                        ToY = (short)toY
                     };
 
                     if (gp.Type == 5)
                     {
                         portal.ToMap = -1;
                         portal.OnTraversal = new OnTraversal();
-                        portal.OnTraversal.Ends.Add(new EndElement { Type = 5 });
+                        portal.OnTraversal.End = new End { Type = 5 };
                     }
 
-                    map.SpawnPortals.Add(portal);
+                    portalsList.Add(portal);
                 }
             }
+
+            map.SpawnPortal = portalsList.OrderBy(p => p.IdOnMap).ToArray();
+        }
+
+        private void ProcessPortalsForDiscovering(OnCharacterDiscoveringMap discovering, List<string> packets, int mapIndex)
+        {
+            var processedPortals = new HashSet<string>();
+            var portalsList = new List<SpawnPortal>();
+
+            foreach (var packet in packets)
+            {
+                if (GpPacketParser.CanParse(packet))
+                {
+                    var gp = GpPacketParser.Parse(packet);
+                    var portalKey = $"{gp.PortalId}_{gp.SourceX}_{gp.SourceY}";
+
+                    if (processedPortals.Contains(portalKey))
+                        continue;
+
+                    processedPortals.Add(portalKey);
+
+                    byte idOnMap = gp.SourceY == 1 ? (byte)0 : (byte)2;
+
+                    int toMap = CalculateToMap(gp, mapIndex);
+                    int toX = gp.SourceX;
+                    int toY = gp.SourceY == 1 ? 28 : 1;
+
+                    var portal = new SpawnPortal
+                    {
+                        IdOnMap = idOnMap,
+                        PositionX = (short)gp.SourceX,
+                        PositionY = (short)gp.SourceY,
+                        Type = (short)gp.Type,
+                        ToMap = (short)toMap,
+                        ToX = (short)toX,
+                        ToY = (short)toY
+                    };
+
+                    if (gp.Type == 5)
+                    {
+                        portal.ToMap = -1;
+                        portal.OnTraversal = new OnTraversal();
+                        portal.OnTraversal.End = new End { Type = 5 };
+                    }
+
+                    portalsList.Add(portal);
+                }
+            }
+
+            discovering.SpawnPortal = portalsList.OrderBy(p => p.IdOnMap).ToArray();
+        }
+
+        private void ProcessButtons(CreateMap map, List<string> packets)
+        {
+            var spawnButtons = new List<SpawnButton>();
+            var processedButtons = new HashSet<int>();
+
+            for (int i = 0; i < packets.Count; i++)
+            {
+                var packet = packets[i];
+
+                if (InPacketParser.CanParse(packet))
+                {
+                    var inPacket = InPacketParser.Parse(packet);
+
+                    if (inPacket.EntityType == EntityType.Object && !processedButtons.Contains(inPacket.EntityId))
+                    {
+                        processedButtons.Add(inPacket.EntityId);
+
+                        var button = new SpawnButton
+                        {
+                            Id = inPacket.EntityId,
+                            PositionX = (short)inPacket.PositionX,
+                            PositionY = (short)inPacket.PositionY,
+                            VNumEnabled = (short)inPacket.VNum,
+                            VNumDisabled = (short)FindAlternateVNum(inPacket, packets, i)
+                        };
+
+                        button.OnFirstEnable = new OnFirstEnable();
+                        spawnButtons.Add(button);
+                    }
+                }
+            }
+
+            map.SpawnButton = spawnButtons.ToArray();
         }
 
         private int CalculateToMap(GpPacket gp, int currentMapIndex)
@@ -251,6 +373,11 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void ProcessDiscoveringPhase(OnCharacterDiscoveringMap discovering, List<string> packets, List<string> allPackets, int mapIndex)
         {
+            var sendMessages = new List<SendMessage>();
+            var npcDialogs = new List<NpcDialog>();
+            var sendPackets = new List<SendPacket>();
+            var summonNpcs = new List<SummonNpc>();
+
             for (int i = 0; i < packets.Count; i++)
             {
                 var packet = packets[i];
@@ -258,20 +385,20 @@ namespace NosTaleTimeSpaceParser.Services
                 if (MsgPacketParser.CanParse(packet))
                 {
                     var msg = MsgPacketParser.Parse(packet);
-                    discovering.SendMessages.Add(new SendMessage
+                    sendMessages.Add(new SendMessage
                     {
                         Value = msg.Message,
-                        Type = msg.Type
+                        Type = (byte)msg.Type
                     });
                 }
                 else if (NpcReqPacketParser.CanParse(packet))
                 {
                     var npcReq = NpcReqPacketParser.Parse(packet);
-                    discovering.NpcDialogs.Add(new ValueAttribute { Value = npcReq.DialogId.ToString() });
+                    npcDialogs.Add(new NpcDialog { Value = npcReq.DialogId });
                 }
                 else if (packet.Trim().StartsWith("sinfo ") || packet.Trim().StartsWith("rsfm "))
                 {
-                    discovering.SendPackets.Add(new ValueAttribute { Value = packet.Trim() });
+                    sendPackets.Add(new SendPacket { Value = packet.Trim() });
                 }
                 else if (InPacketParser.CanParse(packet))
                 {
@@ -281,9 +408,9 @@ namespace NosTaleTimeSpaceParser.Services
                     {
                         var npc = new SummonNpc
                         {
-                            VNum = inPacket.VNum,
-                            PositionX = inPacket.PositionX,
-                            PositionY = inPacket.PositionY,
+                            VNum = (short)inPacket.VNum,
+                            PositionX = (short)inPacket.PositionX,
+                            PositionY = (short)inPacket.PositionY,
                             Move = true,
                             IsProtected = DetermineIsProtected(inPacket, allPackets, packets, i)
                         };
@@ -294,28 +421,26 @@ namespace NosTaleTimeSpaceParser.Services
                             npc.OnDeath = onDeath;
                         }
 
-                        discovering.SummonNpcs.Add(npc);
-                    }
-                    else if (inPacket.EntityType == EntityType.Object)
-                    {
-                        var button = new SpawnButton
-                        {
-                            Id = inPacket.EntityId,
-                            PositionX = inPacket.PositionX,
-                            PositionY = inPacket.PositionY,
-                            VNumEnabled = inPacket.VNum,
-                            VNumDisabled = FindAlternateVNum(inPacket, allPackets, i)
-                        };
-
-                        button.OnFirstEnable = new OnFirstEnable();
-                        discovering.SpawnButtons.Add(button);
+                        summonNpcs.Add(npc);
                     }
                 }
             }
+
+            discovering.SendMessage = sendMessages.ToArray();
+            discovering.NpcDialog = npcDialogs.ToArray();
+            discovering.SendPacket = sendPackets.ToArray();
+            discovering.SummonNpc = summonNpcs.ToArray();
         }
 
         private void ProcessMovePhase(OnMoveOnMap moveOnMap, List<string> packets, List<string> allPackets, int mapIndex)
         {
+            var sendMessages = new List<SendMessage>();
+            var sendPackets = new List<SendPacket>();
+            var generateClocks = new List<GenerateClock>();
+            var startClocks = new List<StartClock>();
+            var summonMonsters = new List<SummonMonster>();
+            var summonNpcs = new List<SummonNpc>();
+
             for (int i = 0; i < packets.Count; i++)
             {
                 var packet = packets[i];
@@ -323,21 +448,21 @@ namespace NosTaleTimeSpaceParser.Services
                 if (MsgPacketParser.CanParse(packet))
                 {
                     var msg = MsgPacketParser.Parse(packet);
-                    moveOnMap.SendMessages.Add(new SendMessage
+                    sendMessages.Add(new SendMessage
                     {
                         Value = msg.Message,
-                        Type = msg.Type
+                        Type = (byte)msg.Type
                     });
                 }
                 else if (packet.Trim().StartsWith("sinfo ") || packet.Trim().StartsWith("rsfm "))
                 {
-                    moveOnMap.SendPackets.Add(new ValueAttribute { Value = packet.Trim() });
+                    sendPackets.Add(new SendPacket { Value = packet.Trim() });
                 }
                 else if (EvntPacketParser.CanParse(packet))
                 {
                     var evnt = EvntPacketParser.Parse(packet);
-                    moveOnMap.GenerateClocks.Add(new ValueAttribute { Value = evnt.Time1.ToString() });
-                    moveOnMap.StartClocks.Add(new object());
+                    generateClocks.Add(new GenerateClock { Value = evnt.Time1 });
+                    startClocks.Add(new StartClock());
                 }
                 else if (InPacketParser.CanParse(packet))
                 {
@@ -347,12 +472,12 @@ namespace NosTaleTimeSpaceParser.Services
                     {
                         var monster = new SummonMonster
                         {
-                            VNum = inPacket.VNum,
-                            PositionX = inPacket.PositionX,
-                            PositionY = inPacket.PositionY,
+                            VNum = (short)inPacket.VNum,
+                            PositionX = (short)inPacket.PositionX,
+                            PositionY = (short)inPacket.PositionY,
                             Move = true,
                             IsBonus = DetermineIsBonus(inPacket, allPackets, packets, i),
-                            IsHostile = true,
+                            IsHostile = DetermineIsHostile(inPacket, allPackets, packets, i),
                             IsTarget = false,
                             IsBoss = false,
                             IsMeteorite = false,
@@ -367,15 +492,15 @@ namespace NosTaleTimeSpaceParser.Services
                             monster.OnDeath = onDeath;
                         }
 
-                        moveOnMap.SummonMonsters.Add(monster);
+                        summonMonsters.Add(monster);
                     }
                     else if (inPacket.EntityType == EntityType.Npc)
                     {
                         var npc = new SummonNpc
                         {
-                            VNum = inPacket.VNum,
-                            PositionX = inPacket.PositionX,
-                            PositionY = inPacket.PositionY,
+                            VNum = (short)inPacket.VNum,
+                            PositionX = (short)inPacket.PositionX,
+                            PositionY = (short)inPacket.PositionY,
                             Move = true,
                             IsProtected = DetermineIsProtected(inPacket, allPackets, packets, i)
                         };
@@ -386,9 +511,22 @@ namespace NosTaleTimeSpaceParser.Services
                             npc.OnDeath = onDeath;
                         }
 
-                        moveOnMap.SummonNpcs.Add(npc);
+                        summonNpcs.Add(npc);
                     }
                 }
+            }
+
+            moveOnMap.SendMessage = sendMessages.ToArray();
+            moveOnMap.SendPacket = sendPackets.ToArray();
+            moveOnMap.GenerateClock = generateClocks.FirstOrDefault();
+            moveOnMap.StartClock = startClocks.FirstOrDefault();
+            moveOnMap.SummonMonster = summonMonsters.ToArray();
+            moveOnMap.SummonNpc = summonNpcs.ToArray();
+
+            if (generateClocks.Count > 1)
+            {
+                moveOnMap.GenerateMapClock = new GenerateMapClock { Value = generateClocks[1].Value };
+                moveOnMap.StartMapClock = startClocks.Count > 1 ? startClocks[1] : new StartClock();
             }
         }
 
@@ -419,7 +557,7 @@ namespace NosTaleTimeSpaceParser.Services
             if (DetermineIsProtected(npcPacket, allPackets, phasePackets, index))
             {
                 var onDeath = new OnDeath();
-                onDeath.Ends.Add(new EndElement { Type = 2 });
+                onDeath.End = new End { Type = 2 };
                 return onDeath;
             }
 
@@ -428,20 +566,60 @@ namespace NosTaleTimeSpaceParser.Services
 
         private bool DetermineIsBonus(InPacket monsterPacket, List<string> allPackets, List<string> phasePackets, int index)
         {
-            for (int i = Math.Max(0, index - 3); i < Math.Min(phasePackets.Count, index + 8); i++)
+            // Un monstre est bonus si :
+            // 1. Il n'y a pas de combat immédiat (pas de SU packet qui le cible)
+            // 2. Il spawn au début sans contexte de combat
+
+            bool hasCombatContext = false;
+
+            // Vérifier s'il y a du combat après le spawn
+            for (int i = index; i < Math.Min(phasePackets.Count, index + 5); i++)
             {
                 if (SuPacketParser.CanParse(phasePackets[i]))
                 {
                     var su = SuPacketParser.Parse(phasePackets[i]);
-                    if (Math.Abs(su.PositionX - monsterPacket.PositionX) <= 3 &&
-                        Math.Abs(su.PositionY - monsterPacket.PositionY) <= 3)
+                    if (su.TargetId == monsterPacket.EntityId)
                     {
-                        return false;
+                        hasCombatContext = true;
+                        break;
                     }
                 }
             }
 
-            return true;
+            // Si pas de combat et pas dans un contexte spécial (bouton, etc), c'est bonus
+            return !hasCombatContext;
+        }
+
+        private bool DetermineIsHostile(InPacket monsterPacket, List<string> allPackets, List<string> phasePackets, int index)
+        {
+            // Un monstre est hostile si :
+            // 1. Il y a un message d'attaque autour
+            // 2. Il est dans un contexte de bouton/lever
+            // 3. Il y a un contexte de combat clair
+
+            // Vérifier le contexte autour
+            for (int i = Math.Max(0, index - 10); i < Math.Min(phasePackets.Count, index + 10); i++)
+            {
+                var packet = phasePackets[i];
+
+                // Messages d'attaque
+                if (packet.ToLower().Contains("attack") ||
+                    packet.ToLower().Contains("defeat") ||
+                    packet.ToLower().Contains("kill") ||
+                    packet.ToLower().Contains("enemies"))
+                {
+                    return true;
+                }
+
+                // Contexte de bouton/lever
+                if (packet.ToLower().Contains("lever") ||
+                    packet.ToLower().Contains("actiated"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private OnDeath? DetectMonsterOnDeath(InPacket monsterPacket, List<string> allPackets, List<string> phasePackets, int index)
@@ -451,6 +629,11 @@ namespace NosTaleTimeSpaceParser.Services
             var processedDialogs = new HashSet<int>();
             bool foundEvents = false;
             var onDeath = new OnDeath();
+
+            var summonMonsters = new List<SummonMonster>();
+            var changePortalTypes = new List<ChangePortalType>();
+            var sendMessages = new List<SendMessage>();
+            var npcDialogs = new List<NpcDialog>();
 
             for (int i = index + 1; i < Math.Min(phasePackets.Count, index + 25); i++)
             {
@@ -469,11 +652,11 @@ namespace NosTaleTimeSpaceParser.Services
                                 var inPacket = InPacketParser.Parse(packet);
                                 if (inPacket.EntityType == EntityType.Monster)
                                 {
-                                    onDeath.SummonMonsters.Add(new SummonMonster
+                                    summonMonsters.Add(new SummonMonster
                                     {
-                                        VNum = inPacket.VNum,
-                                        PositionX = inPacket.PositionX,
-                                        PositionY = inPacket.PositionY,
+                                        VNum = (short)inPacket.VNum,
+                                        PositionX = (short)inPacket.PositionX,
+                                        PositionY = (short)inPacket.PositionY,
                                         Move = true,
                                         IsBonus = true,
                                         IsHostile = true,
@@ -492,12 +675,11 @@ namespace NosTaleTimeSpaceParser.Services
                                 var gp = GpPacketParser.Parse(packet);
                                 if (gp.Type >= 2 && !processedPortals.Contains(gp.PortalId))
                                 {
-                                    onDeath.ChangePortalTypes.Add(new ChangePortalType
+                                    changePortalTypes.Add(new ChangePortalType
                                     {
                                         IdOnMap = gp.PortalId,
-                                        Type = gp.Type
+                                        Type = (sbyte)gp.Type
                                     });
-                                    onDeath.RefreshMapItems.Add(new object());
                                     processedPortals.Add(gp.PortalId);
                                     foundEvents = true;
                                 }
@@ -507,10 +689,10 @@ namespace NosTaleTimeSpaceParser.Services
                                 var msg = MsgPacketParser.Parse(packet);
                                 if (!processedMessages.Contains(msg.Message))
                                 {
-                                    onDeath.SendMessages.Add(new SendMessage
+                                    sendMessages.Add(new SendMessage
                                     {
                                         Value = msg.Message,
-                                        Type = msg.Type
+                                        Type = (byte)msg.Type
                                     });
                                     processedMessages.Add(msg.Message);
                                     foundEvents = true;
@@ -521,9 +703,9 @@ namespace NosTaleTimeSpaceParser.Services
                                 var npcReq = NpcReqPacketParser.Parse(packet);
                                 if (!processedDialogs.Contains(npcReq.DialogId))
                                 {
-                                    onDeath.NpcDialogs.Add(new ValueAttribute
+                                    npcDialogs.Add(new NpcDialog
                                     {
-                                        Value = npcReq.DialogId.ToString()
+                                        Value = npcReq.DialogId
                                     });
                                     processedDialogs.Add(npcReq.DialogId);
                                     foundEvents = true;
@@ -535,7 +717,17 @@ namespace NosTaleTimeSpaceParser.Services
                 }
             }
 
-            return foundEvents ? onDeath : null;
+            if (foundEvents)
+            {
+                onDeath.SummonMonster = summonMonsters.ToArray();
+                onDeath.ChangePortalType = changePortalTypes.ToArray();
+                onDeath.SendMessage = sendMessages.ToArray();
+                onDeath.NpcDialog = npcDialogs.ToArray();
+                onDeath.RefreshMapItems = changePortalTypes.Any() ? new object() : null;
+                return onDeath;
+            }
+
+            return null;
         }
 
         private int FindAlternateVNum(InPacket objectPacket, List<string> packets, int startIndex)
@@ -552,12 +744,12 @@ namespace NosTaleTimeSpaceParser.Services
                 }
             }
 
-            return 1000; // Fallback générique sans hardcode spécifique
+            return objectPacket.VNum + 45;
         }
 
         private void FinalizeModel()
         {
-            _model.InstanceEvents.CreateMaps = _maps.Values.OrderBy(m => m.Map).ToList();
+            _model.InstanceEvents.CreateMap = _maps.Values.OrderBy(m => m.Map).ToArray();
         }
     }
 }
