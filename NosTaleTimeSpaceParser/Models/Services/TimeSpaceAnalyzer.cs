@@ -14,14 +14,12 @@ namespace NosTaleTimeSpaceParser.Services
         private List<TimeSpaceMonster> _mapMonsters;
         private List<TimeSpaceMonster> _allMonsters;
 
-        // États comme dans le vieux tool
-        private bool _flag1; // Phase de découverte
-        private bool _flag2; // Clock flag
-        private bool _flag3; // Clear monster flag
-        private int _num2;   // Pour les calculs de temps
-        private int _num3;   // Compteur walk
+        private bool _flag1;
+        private bool _flag2;
+        private bool _flag3;
+        private int _num2;
+        private int _num3;
 
-        // Variables de contexte
         private TimeSpaceMap _currentMap;
         private TimeSpaceMonster _targetMonster;
         private object _currentTarget;
@@ -29,9 +27,8 @@ namespace NosTaleTimeSpaceParser.Services
         private short _posX, _posY;
         private short _indexX, _indexY;
 
-        // IDs dynamiques (détectés automatiquement)
-        private int _playerId = -1;  // Détecté depuis le premier packet AT
-        private readonly HashSet<int> _mateIds = new HashSet<int>();  // Détectés automatiquement
+        private int _playerId = -1;
+        private readonly HashSet<int> _mateIds = new HashSet<int>();
 
         public TimeSpaceAnalyzer()
         {
@@ -72,10 +69,8 @@ namespace NosTaleTimeSpaceParser.Services
                 {
                     var rbr = RbrPacketParser.Parse(_packets[i]);
 
-                    // Extraire le vrai nom du titre (après les scores)
                     string realName = ExtractRealNameFromRbr(rbr.Name);
 
-                    // Chercher la description sur la ligne suivante
                     if (i + 1 < _packets.Count)
                     {
                         var nextLine = _packets[i + 1].Trim();
@@ -91,7 +86,6 @@ namespace NosTaleTimeSpaceParser.Services
                     _model.Globals.LevelMaximum = new Level { Value = (byte)rbr.LevelMaximum };
                     _model.Globals.Lives = new Lives { Value = 1 };
 
-                    // Items dans l'ordre exact de Untitled-1.xml
                     _model.Globals.DrawItems = rbr.DrawItems.Select(item => new Item
                     {
                         VNum = (short)item.VNum,
@@ -119,8 +113,6 @@ namespace NosTaleTimeSpaceParser.Services
 
         private string ExtractRealNameFromRbr(string fullName)
         {
-            // Format: "1153.Title1 0 0 Time-Space Tutorial"
-            // Extraire: "Time-Space Tutorial"
             var parts = fullName.Split(' ');
 
             int nameStartIndex = -1;
@@ -227,10 +219,9 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void HandleAtPacket(AtPacket packet)
         {
-            // Détecter l'ID du joueur dynamiquement depuis le premier AT
             if (_playerId == -1)
             {
-                _playerId = packet.MapId; // L'ID du joueur est dans MapId du packet AT
+                _playerId = packet.MapId;
             }
 
             var mapId = _maps.Count;
@@ -250,8 +241,8 @@ namespace NosTaleTimeSpaceParser.Services
                 SendMessages = new List<TimeSpaceMessage>(),
                 SendPackets = new List<string>(),
                 NpcDialogs = new List<int>(),
-                ProcessedPortals = new HashSet<string>(), // Éviter les doublons
-                ProcessedButtons = new HashSet<int>()     // Éviter les doublons
+                ProcessedPortals = new HashSet<string>(),
+                ProcessedButtons = new HashSet<int>()
             };
 
             _maps[mapId] = _currentMap;
@@ -284,7 +275,6 @@ namespace NosTaleTimeSpaceParser.Services
             if (_num3 == 1)
             {
                 _flag1 = false;
-                // Passer en mode OnMoveOnMap
                 _currentEventName = "OnMoveOnMap";
             }
             _num3++;
@@ -292,11 +282,8 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void HandleInPacket(InPacket packet)
         {
-            // Filtrage IMMÉDIAT des mates avant tout traitement
-            if (packet.EntityType == EntityType.Npc &&
-                (packet.VNum == 1548 || packet.VNum == 2640))
+            if (packet.RawPacket.Contains(" @ "))
             {
-                // C'est un mate → on l'ignore complètement
                 return;
             }
 
@@ -314,18 +301,6 @@ namespace NosTaleTimeSpaceParser.Services
             }
         }
 
-        private bool IsPlayerMate(InPacket packet)
-        {
-            // Filtrer les mates : VNums 1548 et 2640 avec Equipment contenant @
-            if (packet.EntityType == EntityType.Npc &&
-                (packet.VNum == 1548 || packet.VNum == 2640) &&
-                packet.Equipment.Contains("@"))
-            {
-                return true;
-            }
-            return false;
-        }
-
         private void HandleNpcSummon(InPacket packet)
         {
             var npc = new TimeSpaceNpc
@@ -338,7 +313,6 @@ namespace NosTaleTimeSpaceParser.Services
                 IsProtected = DetermineIsProtected(packet)
             };
 
-            // NPCs toujours dans OnCharacterDiscoveringMap (sauf si spawn dans OnDeath)
             if (_currentEventName == "OnCharacterDiscoveringMap")
             {
                 _currentMap.SummonNpcs.Add(npc);
@@ -365,25 +339,38 @@ namespace NosTaleTimeSpaceParser.Services
                 OnDeathEvents = new List<TimeSpaceEvent>()
             };
 
-            // Déterminer la phase selon la logique expliquée
             if (_currentEventName == "OnCharacterDiscoveringMap")
             {
-                // Phase découverte (entre at et premier su)
+                _mapMonsters.Add(monster);
+                _allMonsters.Add(monster);
+                _currentMap.SummonMonsters.Add(monster);
+            }
+            else if (_currentEventName == "OnMoveOnMap" || _flag1 == false)
+            {
+                if (monster.VNum == 333)
+                {
+                    monster.IsHostile = true;
+                    monster.IsBonus = false;
+                }
+                else
+                {
+                    monster.IsHostile = false;
+                    monster.IsBonus = true;
+                }
                 _mapMonsters.Add(monster);
                 _allMonsters.Add(monster);
                 _currentMap.SummonMonsters.Add(monster);
             }
             else if (_currentEventName == "OnDeath" || _currentEventName == "OnFirstEnable")
             {
-                // Phase événement (après su ou activation levier)
                 monster.IsBonus = true;
                 monster.IsHostile = true;
                 AddEventToCurrentTarget("SummonMonster", monster);
                 _allMonsters.Add(monster);
+                return;
             }
             else if (_currentEventName == "OnMapClean")
             {
-                // Exception: si c'est OnMapClean, ajouter à la map
                 _currentMap.SummonMonsters.Add(monster);
                 _allMonsters.Add(monster);
             }
@@ -391,13 +378,11 @@ namespace NosTaleTimeSpaceParser.Services
 
         private bool DetermineIsProtected(InPacket npcPacket)
         {
-            // Logique simple: NPC VNum 320 = garde protégé
             return npcPacket.VNum == 320;
         }
 
         private void HandleObjectSummon(InPacket packet)
         {
-            // Éviter les doublons de boutons
             if (_currentMap.ProcessedButtons.Contains(packet.EntityId))
                 return;
 
@@ -418,9 +403,7 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void HandleSuPacket(SuPacket packet)
         {
-            // su = mort d'un monstre → déclenche OnDeath
-            // Utiliser l'ID du joueur détecté dynamiquement
-            if (packet.Type == 1 && packet.CallerId == _playerId) // Joueur attaque
+            if (packet.Type == 1 && packet.CallerId == _playerId)
             {
                 var monster = _allMonsters.FirstOrDefault(m => m.EntityId == packet.TargetId);
                 if (monster != null && !monster.IsDead)
@@ -428,16 +411,12 @@ namespace NosTaleTimeSpaceParser.Services
                     monster.IsDead = true;
                     _currentTarget = monster;
                     _currentEventName = "OnDeath";
-
-                    // Les événements OnDeath (nouveau monstre, ChangePortalType, etc.) 
-                    // vont être ajoutés par les packets suivants
                 }
             }
         }
 
         private void HandleMapClear()
         {
-            // mapclear = tous les monstres morts → déclenche OnMapClean
             foreach (var monster in _mapMonsters.Where(m => !m.IsDead))
             {
                 monster.IsDead = true;
@@ -451,13 +430,11 @@ namespace NosTaleTimeSpaceParser.Services
         {
             var portalKey = $"{packet.PortalId}_{packet.SourceX}_{packet.SourceY}_{packet.Type}";
 
-            // Éviter les doublons de portails
             if (_currentMap.ProcessedPortals.Contains(portalKey))
                 return;
 
             _currentMap.ProcessedPortals.Add(portalKey);
 
-            // Si c'est un changement de type de portail (Type >= 2), c'est un événement
             if (packet.Type >= 2)
             {
                 var changeEvent = new TimeSpaceEvent
@@ -469,10 +446,9 @@ namespace NosTaleTimeSpaceParser.Services
 
                 AddEventToCurrentTarget("ChangePortalType", changeEvent);
                 AddEventToCurrentTarget("RefreshMapItems", null);
-                return; // Ne pas créer de portail physique
+                return;
             }
 
-            // Portail initial (Type 0 ou 1)  
             var portal = new TimeSpacePortal
             {
                 IdOnMap = (byte)packet.PortalId,
@@ -485,13 +461,12 @@ namespace NosTaleTimeSpaceParser.Services
                 OnTraversalEvents = new List<TimeSpaceEvent>()
             };
 
-            if (packet.Type == 5) // Portail de sortie
+            if (packet.Type == 5)
             {
                 portal.ToMap = -1;
                 portal.OnTraversalEvents.Add(new TimeSpaceEvent { Type = "End", Value = 5 });
             }
 
-            // Ajouter seulement si pas déjà présent
             if (!_currentMap.SpawnPortals.Any(p => p.IdOnMap == portal.IdOnMap && p.PositionX == portal.PositionX && p.PositionY == portal.PositionY))
             {
                 _currentMap.SpawnPortals.Add(portal);
@@ -504,9 +479,9 @@ namespace NosTaleTimeSpaceParser.Services
 
             if (gp.Type == 5) return -1;
 
-            if (gp.SourceY == 1) // Portail vers le haut
+            if (gp.SourceY == 1)
                 return currentMapIndex + 1;
-            else if (gp.SourceY == 28) // Portail vers le bas  
+            else if (gp.SourceY == 28)
                 return currentMapIndex - 1;
 
             return currentMapIndex;
@@ -546,7 +521,7 @@ namespace NosTaleTimeSpaceParser.Services
         {
             switch (packet.Type)
             {
-                case 1: // SimpleClock
+                case 1:
                     if (packet.Time1 == packet.Time2 && _flag1)
                     {
                         _currentMap.GenerateClock = packet.Time1;
@@ -554,7 +529,7 @@ namespace NosTaleTimeSpaceParser.Services
                     }
                     break;
 
-                case 3: // MapClock - StartMapClock avec OnStop/OnTimeout
+                case 3:
                     if (packet.Time1 == packet.Time2 && _flag1)
                     {
                         _currentMap.GenerateMapClock = packet.Time1;
@@ -566,7 +541,7 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void HandleOutPacket(OutPacket packet)
         {
-            if (packet.Type == 3) // Monster
+            if (packet.Type == 3)
             {
                 if (!_flag3)
                 {
@@ -578,17 +553,13 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void HandlePreqPacket()
         {
-            // PREQ = changement de map = tous les monstres de la map précédente sont morts
-            // C'est ici qu'on détecte OnMapClean !
             if (_mapMonsters.Any(m => !m.IsDead))
             {
-                // Forcer la mort de tous les monstres restants
                 foreach (var monster in _mapMonsters.Where(m => !m.IsDead))
                 {
                     monster.IsDead = true;
                 }
 
-                // Déclencher OnMapClean sur la map
                 _currentTarget = _currentMap;
                 _currentEventName = "OnMapClean";
             }
@@ -596,7 +567,6 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void HandleEffPacket(EffPacket packet)
         {
-            // Logique du vieux tool pour détecter IsTarget et IsBonus
             if (packet.Type == 3)
             {
                 var monster = _allMonsters.FirstOrDefault(m => m.EntityId == packet.EntityId);
@@ -640,7 +610,7 @@ namespace NosTaleTimeSpaceParser.Services
                 {
                     map.OnMoveOnMap.Add(evt);
                 }
-                else if (_currentEventName == "OnMapClear")
+                else if (_currentEventName == "OnMapClean")
                 {
                     map.OnMapClean.Add(evt);
                 }
@@ -674,7 +644,6 @@ namespace NosTaleTimeSpaceParser.Services
                     IndexY = (byte)map.IndexY
                 };
 
-                // Ordre exact de Untitled-1.xml : OnCharacterDiscoveringMap, OnMoveOnMap, SpawnButton, SpawnPortal
                 GenerateOnCharacterDiscoveringMap(createMap, map);
                 GenerateOnMoveOnMap(createMap, map);
                 GenerateSpawnButtons(createMap, map);
@@ -693,7 +662,6 @@ namespace NosTaleTimeSpaceParser.Services
             {
                 var discovering = new OnCharacterDiscoveringMap();
 
-                // Ordre exact de Untitled-1.xml
                 discovering.NpcDialog = map.NpcDialogs.Select(d => new NpcDialog { Value = d }).ToArray();
                 discovering.SendMessage = map.SendMessages.Select(m => new SendMessage { Value = m.Value, Type = m.Type }).ToArray();
                 discovering.SendPacket = map.SendPackets.Select(p => new SendPacket { Value = p }).ToArray();
@@ -706,7 +674,6 @@ namespace NosTaleTimeSpaceParser.Services
                     IsProtected = n.IsProtected
                 }).ToArray();
 
-                // SpawnPortal dans OnCharacterDiscoveringMap SEULEMENT pour Map 0
                 if (map.Id == 0)
                 {
                     discovering.SpawnPortal = map.SpawnPortals.Take(1).Select(p => new SpawnPortal
@@ -727,11 +694,9 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void GenerateOnMoveOnMap(CreateMap createMap, TimeSpaceMap map)
         {
-            // OnMoveOnMap existe toujours, même si vide
             var moveOnMapList = new List<OnMoveOnMap>();
             var moveOnMap = new OnMoveOnMap();
 
-            // Ajouter les monstres avec OnDeath
             if (map.SummonMonsters.Any())
             {
                 moveOnMap.SummonMonster = map.SummonMonsters.Select(m => new SummonMonster
@@ -756,7 +721,6 @@ namespace NosTaleTimeSpaceParser.Services
                 moveOnMap.StartClock = new StartClock();
             }
 
-            // Générer OnMapClean dans OnMoveOnMap si des événements existent
             if (map.OnMapClean.Any())
             {
                 var onMapClean = new OnMapClean();
@@ -816,7 +780,10 @@ namespace NosTaleTimeSpaceParser.Services
 
         private OnDeath GenerateOnDeath(TimeSpaceMonster monster)
         {
-            if (!monster.OnDeathEvents.Any()) return null;
+            if (!monster.OnDeathEvents.Any())
+            {
+                return null;
+            }
 
             var onDeath = new OnDeath();
 
@@ -852,6 +819,14 @@ namespace NosTaleTimeSpaceParser.Services
                             {
                                 IdOnMap = changeEvt.PortalId,
                                 Type = (sbyte)changeEvt.Value
+                            });
+                        }
+                        else
+                        {
+                            changePortalTypes.Add(new ChangePortalType
+                            {
+                                IdOnMap = evt.PortalId,
+                                Type = (sbyte)evt.Value
                             });
                         }
                         break;
@@ -905,7 +880,6 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void GenerateSpawnPortals(CreateMap createMap, TimeSpaceMap map)
         {
-            // SpawnPortal pour toutes les maps SAUF Map 0 (qui les a dans OnCharacterDiscoveringMap)
             if (map.SpawnPortals.Any())
             {
                 var portalsToAdd = map.Id == 0 ? new List<TimeSpacePortal>() : map.SpawnPortals.ToList();
