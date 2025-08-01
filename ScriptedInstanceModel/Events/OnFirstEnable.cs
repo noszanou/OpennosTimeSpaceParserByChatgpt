@@ -38,6 +38,9 @@ namespace ScriptedInstanceModel.Events
         [XmlElement]
         public NpcDialog[] NpcDialog { get; set; }
 
+        [XmlElement]
+        public SendPacket[] SendPacket { get; set; }
+
         #endregion Properties
     }
 }

@@ -27,7 +27,6 @@
 			<OnCharacterDiscoveringMap>
 				<NpcDialog Value="8004" />
 				<SendMessage Type="0" Value="Voici le lobby." />
-				<SendPacket Value="minfo 0 1 -1.0/0 -1.0/0 -1/0 -1.0/0 1 2 0" />
 				<SendPacket Value="msgi 0 715 0 0 0 0 0" />
 				<SpawnPortal IdOnMap="0" PositionX="14" PositionY="1" ToMap="1" ToX="14" ToY="28" Type="0" />
 			</OnCharacterDiscoveringMap>
@@ -43,13 +42,16 @@
 			<OnMoveOnMap>
 				<GenerateClock Value="3000" />
 				<StartClock />
-				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="13" PositionY="14" VNum="24" HasDelay="0" />
-				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="17" PositionY="12" VNum="24" HasDelay="0" />
+				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="13" PositionY="14" VNum="24" HasDelay="0">
+					<OnDeath>
+						<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="17" PositionY="12" VNum="24" HasDelay="0" />
+					</OnDeath>
+				</SummonMonster>
 			</OnMoveOnMap>
 			<SpawnPortal IdOnMap="0" PositionX="14" PositionY="1" ToMap="2" ToX="14" ToY="28" Type="0" />
 			<SpawnPortal IdOnMap="2" PositionX="14" PositionY="28" ToMap="0" ToX="14" ToY="1" Type="0" />
 		</CreateMap>
-		<CreateMap IndexX="0" IndexY="0" Map="2" VNum="4114" XpRate="0" DropAllowed="false">
+		<CreateMap IndexX="0" IndexY="2" Map="2" VNum="4114" XpRate="0" DropAllowed="false">
 			<OnCharacterDiscoveringMap>
 				<NpcDialog Value="8006" />
 			</OnCharacterDiscoveringMap>
@@ -58,8 +60,9 @@
 					<ChangePortalType IdOnMap="0" Type="2" Map="0" />
 					<NpcDialog Value="8007" />
 					<RefreshMapItems />
+					<SendPacket Value="msgi 0 537 0 0 0 0 0" />
 				</OnMapClean>
-				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="12" PositionY="13" VNum="333" HasDelay="0" />
+				<SummonMonster IsBoss="false" IsHostile="true" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="12" PositionY="13" VNum="333" HasDelay="0" />
 			</OnMoveOnMap>
 			<SpawnPortal IdOnMap="0" PositionX="14" PositionY="1" ToMap="3" ToX="14" ToY="28" Type="1" />
 			<SpawnPortal IdOnMap="2" PositionX="14" PositionY="28" ToMap="1" ToX="14" ToY="1" Type="1" />
@@ -67,17 +70,20 @@
 		<CreateMap IndexX="0" IndexY="2" Map="3" VNum="4100" XpRate="0" DropAllowed="false">
 			<OnCharacterDiscoveringMap>
 				<NpcDialog Value="8008" />
+				<SendPacket Value="msgi 0 408 0 0 0 0 0" />
 			</OnCharacterDiscoveringMap>
-			<OnMoveOnMap>
-				<OnMapClean>
-					<ChangePortalType IdOnMap="0" Type="2" Map="0" />
+			<SpawnButton Id="0" PositionX="14" PositionY="18" VNumDisabled="1000" VNumEnabled="1045">
+				<OnFirstEnable>
+					<SummonMonster IsBoss="false" IsHostile="true" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="20" PositionY="15" VNum="333" HasDelay="0" />
+					<SummonMonster IsBoss="false" IsHostile="true" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="8" PositionY="15" VNum="333" HasDelay="0" />
+					<OnMapClean>
+						<ChangePortalType IdOnMap="0" Type="2" Map="0" />
+						<NpcDialog Value="8009" />
+						<RefreshMapItems />
+					</OnMapClean>
 					<NpcDialog Value="8009" />
-					<RefreshMapItems />
-				</OnMapClean>
-				<SummonMonster IsBoss="false" IsHostile="true" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="20" PositionY="15" VNum="333" HasDelay="0" />
-				<SummonMonster IsBoss="false" IsHostile="true" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="8" PositionY="15" VNum="333" HasDelay="0" />
-			</OnMoveOnMap>
-			<SpawnButton Id="9973731" PositionX="14" PositionY="18" VNumDisabled="955" VNumEnabled="1000" />
+				</OnFirstEnable>
+			</SpawnButton>
 			<SpawnPortal IdOnMap="0" PositionX="14" PositionY="1" ToMap="4" ToX="14" ToY="28" Type="1" />
 			<SpawnPortal IdOnMap="2" PositionX="14" PositionY="28" ToMap="2" ToX="14" ToY="1" Type="1" />
 		</CreateMap>
@@ -89,9 +95,14 @@
 				<OnMapClean>
 					<ChangePortalType IdOnMap="0" Type="2" Map="0" />
 					<RefreshMapItems />
+					<SendPacket Value="msgi 0 537 0 0 0 0 0" />
+					<SendPacket Value="msgi 1 496 0 0 0 0 0" />
 				</OnMapClean>
-				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="11" PositionY="14" VNum="333" HasDelay="0" />
-				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="16" PositionY="17" VNum="24" HasDelay="0" />
+				<SummonMonster IsBoss="false" IsHostile="true" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="11" PositionY="14" VNum="333" HasDelay="0">
+					<OnDeath>
+						<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="16" PositionY="17" VNum="24" HasDelay="0" />
+					</OnDeath>
+				</SummonMonster>
 			</OnMoveOnMap>
 			<SpawnPortal IdOnMap="0" PositionX="14" PositionY="1" ToMap="5" ToX="14" ToY="28" Type="1" />
 			<SpawnPortal IdOnMap="2" PositionX="14" PositionY="28" ToMap="3" ToX="14" ToY="1" Type="1" />
@@ -106,22 +117,26 @@
 					<ChangePortalType IdOnMap="0" Type="2" Map="0" />
 					<RefreshMapItems />
 					<SendMessage Type="0" Value="La garde de NosVille est en sécurité." />
+					<SendPacket Value="msgi 0 537 0 0 0 0 0" />
 				</OnMapClean>
 				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="15" PositionY="12" VNum="25" HasDelay="0" />
-				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="false" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="11" PositionY="14" VNum="24" HasDelay="0" />
+				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="11" PositionY="14" VNum="24" HasDelay="0" />
 			</OnMoveOnMap>
 			<SpawnPortal IdOnMap="0" PositionX="14" PositionY="1" ToMap="6" ToX="14" ToY="28" Type="1" />
 			<SpawnPortal IdOnMap="2" PositionX="14" PositionY="28" ToMap="4" ToX="14" ToY="1" Type="1" />
 		</CreateMap>
-		<CreateMap IndexX="0" IndexY="2" Map="6" VNum="4103" XpRate="0" DropAllowed="false">
+		<CreateMap IndexX="0" IndexY="1" Map="6" VNum="4103" XpRate="0" DropAllowed="false">
 			<OnCharacterDiscoveringMap>
 				<NpcDialog Value="8011" />
 			</OnCharacterDiscoveringMap>
 			<OnMoveOnMap>
 				<OnMapClean>
+					<ChangePortalType IdOnMap="0" Type="5" Map="0" />
 					<ChangePortalType IdOnMap="0" Type="4" Map="0" />
 					<NpcDialog Value="8012" />
 					<RefreshMapItems />
+					<SendPacket Value="msgi 0 537 0 0 0 0 0" />
+					<SendPacket Value="msgi 0 97 0 0 0 0 0" />
 				</OnMapClean>
 				<SummonMonster IsBoss="false" IsHostile="false" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="19" PositionY="12" VNum="24" HasDelay="0" />
 				<SummonMonster IsBoss="false" IsHostile="true" IsTarget="false" Move="true" IsBonus="true" IsMeteorite="false" Damage="0" NoticeRange="0" PositionX="15" PositionY="17" VNum="333" HasDelay="0" />

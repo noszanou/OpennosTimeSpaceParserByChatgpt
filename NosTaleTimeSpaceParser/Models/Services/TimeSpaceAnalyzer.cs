@@ -13,22 +13,15 @@ namespace NosTaleTimeSpaceParser.Services
         private Dictionary<int, TimeSpaceMap> _maps;
         private List<TimeSpaceMonster> _mapMonsters;
         private List<TimeSpaceMonster> _allMonsters;
-
         private bool _flag1;
-        private bool _flag2;
-        private bool _flag3;
-        private int _num2;
+        private bool _inOnFirstEnable;
         private int _num3;
-
         private TimeSpaceMap _currentMap;
-        private TimeSpaceMonster _targetMonster;
-        private object _currentTarget;
-        private string _currentEventName;
+        private TimeSpaceMonster _lastDeadMonster;
         private short _posX, _posY;
         private short _indexX, _indexY;
-
         private int _playerId = -1;
-        private readonly HashSet<int> _mateIds = new HashSet<int>();
+        private int _buttonIdCounter = 0;
 
         public TimeSpaceAnalyzer()
         {
@@ -57,53 +50,32 @@ namespace NosTaleTimeSpaceParser.Services
             _maps = new Dictionary<int, TimeSpaceMap>();
             _mapMonsters = new List<TimeSpaceMonster>();
             _allMonsters = new List<TimeSpaceMonster>();
+            _buttonIdCounter = 0;
         }
 
         private void ParseGlobalsFromRbr()
         {
             string descriptionLine = null;
-
             for (int i = 0; i < _packets.Count; i++)
             {
                 if (RbrPacketParser.CanParse(_packets[i]))
                 {
                     var rbr = RbrPacketParser.Parse(_packets[i]);
-
                     string realName = ExtractRealNameFromRbr(rbr.Name);
-
                     if (i + 1 < _packets.Count)
                     {
                         var nextLine = _packets[i + 1].Trim();
                         if (!IsPacketLine(nextLine) && !string.IsNullOrEmpty(nextLine))
-                        {
                             descriptionLine = nextLine;
-                        }
                     }
-
                     _model.Globals.Name = new Name { Value = realName };
                     _model.Globals.Label = new Label { Value = descriptionLine ?? rbr.Label };
                     _model.Globals.LevelMinimum = new Level { Value = (byte)rbr.LevelMinimum };
                     _model.Globals.LevelMaximum = new Level { Value = (byte)rbr.LevelMaximum };
                     _model.Globals.Lives = new Lives { Value = 1 };
-
-                    _model.Globals.DrawItems = rbr.DrawItems.Select(item => new Item
-                    {
-                        VNum = (short)item.VNum,
-                        Amount = (short)item.Amount
-                    }).ToArray();
-
-                    _model.Globals.SpecialItems = rbr.SpecialItems.Select(item => new Item
-                    {
-                        VNum = (short)item.VNum,
-                        Amount = (short)item.Amount
-                    }).ToArray();
-
-                    _model.Globals.GiftItems = rbr.GiftItems.Select(item => new Item
-                    {
-                        VNum = (short)item.VNum,
-                        Amount = (short)item.Amount
-                    }).ToArray();
-
+                    _model.Globals.DrawItems = rbr.DrawItems.Select(item => new Item { VNum = (short)item.VNum, Amount = (short)item.Amount }).ToArray();
+                    _model.Globals.SpecialItems = rbr.SpecialItems.Select(item => new Item { VNum = (short)item.VNum, Amount = (short)item.Amount }).ToArray();
+                    _model.Globals.GiftItems = rbr.GiftItems.Select(item => new Item { VNum = (short)item.VNum, Amount = (short)item.Amount }).ToArray();
                     _model.Globals.Gold = new Gold { Value = 1500 };
                     _model.Globals.Reputation = new Reputation { Value = 50 };
                     break;
@@ -114,7 +86,6 @@ namespace NosTaleTimeSpaceParser.Services
         private string ExtractRealNameFromRbr(string fullName)
         {
             var parts = fullName.Split(' ');
-
             int nameStartIndex = -1;
             for (int i = 0; i < parts.Length; i++)
             {
@@ -124,21 +95,14 @@ namespace NosTaleTimeSpaceParser.Services
                     break;
                 }
             }
-
             if (nameStartIndex > 0)
-            {
                 return string.Join(" ", parts.Skip(nameStartIndex));
-            }
-
             return fullName;
         }
 
         private bool IsNumericOrScore(string part)
         {
-            return part == "0" || part == "0." ||
-                   int.TryParse(part, out _) ||
-                   float.TryParse(part, out _) ||
-                   part.Contains(".");
+            return part == "0" || part == "0." || int.TryParse(part, out _) || float.TryParse(part, out _) || part.Contains(".");
         }
 
         private bool IsPacketLine(string line)
@@ -150,79 +114,45 @@ namespace NosTaleTimeSpaceParser.Services
         private void ProcessPacketsSequentially()
         {
             for (int i = 0; i < _packets.Count; i++)
-            {
-                var packet = _packets[i];
-                ProcessSinglePacket(packet);
-            }
+                ProcessSinglePacket(_packets[i]);
         }
 
         private void ProcessSinglePacket(string packet)
         {
             if (AtPacketParser.CanParse(packet))
-            {
                 HandleAtPacket(AtPacketParser.Parse(packet));
-            }
             else if (RsfPacketParser.CanParse(packet))
-            {
                 HandleRsfnPacket(RsfPacketParser.Parse(packet));
-            }
             else if (WalkPacketParser.CanParse(packet))
-            {
                 HandleWalkPacket(WalkPacketParser.Parse(packet));
-            }
             else if (InPacketParser.CanParse(packet))
-            {
                 HandleInPacket(InPacketParser.Parse(packet));
-            }
             else if (SuPacketParser.CanParse(packet))
-            {
                 HandleSuPacket(SuPacketParser.Parse(packet));
-            }
             else if (GpPacketParser.CanParse(packet))
-            {
                 HandleGpPacket(GpPacketParser.Parse(packet));
-            }
             else if (MsgPacketParser.CanParse(packet))
-            {
                 HandleMsgPacket(MsgPacketParser.Parse(packet));
-            }
             else if (NpcReqPacketParser.CanParse(packet))
-            {
                 HandleNpcReqPacket(NpcReqPacketParser.Parse(packet));
-            }
             else if (EvntPacketParser.CanParse(packet))
-            {
                 HandleEvntPacket(EvntPacketParser.Parse(packet));
-            }
             else if (OutPacketParser.CanParse(packet))
-            {
                 HandleOutPacket(OutPacketParser.Parse(packet));
-            }
             else if (PreqPacketParser.CanParse(packet))
-            {
                 HandlePreqPacket();
-            }
             else if (EffPacketParser.CanParse(packet))
-            {
                 HandleEffPacket(EffPacketParser.Parse(packet));
-            }
             else if (packet.Trim().StartsWith("mapclear") || packet.Trim().StartsWith("mapclean"))
-            {
                 HandleMapClear();
-            }
-            else if (packet.Trim().StartsWith("rsfm ") || packet.Trim().StartsWith("sinfo ") ||
-                     packet.Trim().StartsWith("minfo ") || packet.Trim().StartsWith("msgi "))
-            {
+            else if (packet.Trim().StartsWith("rsfm ") || packet.Trim().StartsWith("sinfo ") || packet.Trim().StartsWith("minfo ") || packet.Trim().StartsWith("msgi "))
                 HandleSendPacket(packet.Trim());
-            }
         }
 
         private void HandleAtPacket(AtPacket packet)
         {
             if (_playerId == -1)
-            {
                 _playerId = packet.MapId;
-            }
 
             var mapId = _maps.Count;
             _currentMap = new TimeSpaceMap
@@ -234,6 +164,7 @@ namespace NosTaleTimeSpaceParser.Services
                 OnCharacterDiscoveringMap = new List<TimeSpaceEvent>(),
                 OnMoveOnMap = new List<TimeSpaceEvent>(),
                 OnMapClean = new List<TimeSpaceEvent>(),
+                OnFirstEnableEvents = new List<TimeSpaceEvent>(),
                 SpawnPortals = new List<TimeSpacePortal>(),
                 SummonNpcs = new List<TimeSpaceNpc>(),
                 SummonMonsters = new List<TimeSpaceMonster>(),
@@ -248,12 +179,8 @@ namespace NosTaleTimeSpaceParser.Services
             _maps[mapId] = _currentMap;
             _mapMonsters.Clear();
             _flag1 = true;
-            _flag2 = false;
-            _flag3 = false;
+            _inOnFirstEnable = false;
             _num3 = 0;
-            _currentTarget = _currentMap;
-            _currentEventName = "OnCharacterDiscoveringMap";
-
             _posX = (short)packet.PositionX;
             _posY = (short)packet.PositionY;
         }
@@ -264,6 +191,11 @@ namespace NosTaleTimeSpaceParser.Services
             {
                 _indexX = (short)packet.Values[0];
                 _indexY = (short)packet.Values[1];
+                if (_currentMap != null)
+                {
+                    _currentMap.IndexX = _indexX;
+                    _currentMap.IndexY = _indexY;
+                }
             }
         }
 
@@ -271,21 +203,13 @@ namespace NosTaleTimeSpaceParser.Services
         {
             _posX = (short)packet.PositionX;
             _posY = (short)packet.PositionY;
-
-            if (_num3 == 1)
-            {
-                _flag1 = false;
-                _currentEventName = "OnMoveOnMap";
-            }
             _num3++;
         }
 
         private void HandleInPacket(InPacket packet)
         {
             if (packet.RawPacket.Contains(" @ "))
-            {
                 return;
-            }
 
             switch (packet.EntityType)
             {
@@ -310,17 +234,15 @@ namespace NosTaleTimeSpaceParser.Services
                 PositionX = (short)packet.PositionX,
                 PositionY = (short)packet.PositionY,
                 Move = true,
-                IsProtected = DetermineIsProtected(packet)
+                IsProtected = packet.VNum == 320
             };
 
-            if (_currentEventName == "OnCharacterDiscoveringMap")
-            {
+            if (_flag1)
                 _currentMap.SummonNpcs.Add(npc);
-            }
+            else if (_inOnFirstEnable)
+                _currentMap.OnFirstEnableEvents.Add(new TimeSpaceEvent { Type = "SummonNpc", Data = npc });
             else
-            {
-                AddEventToCurrentTarget("SummonNpc", npc);
-            }
+                _currentMap.OnMoveOnMap.Add(new TimeSpaceEvent { Type = "SummonNpc", Data = npc });
         }
 
         private void HandleMonsterSummon(InPacket packet)
@@ -332,53 +254,33 @@ namespace NosTaleTimeSpaceParser.Services
                 PositionX = (short)packet.PositionX,
                 PositionY = (short)packet.PositionY,
                 IsDead = false,
-                IsBonus = false,
+                IsBonus = packet.VNum == 24,
                 IsTarget = false,
                 Move = true,
-                IsHostile = false,
+                IsHostile = packet.VNum == 333,
                 OnDeathEvents = new List<TimeSpaceEvent>()
             };
 
-            if (_currentEventName == "OnCharacterDiscoveringMap")
-            {
-                _mapMonsters.Add(monster);
-                _allMonsters.Add(monster);
-                _currentMap.SummonMonsters.Add(monster);
-            }
-            else if (_currentEventName == "OnMoveOnMap" || _flag1 == false)
-            {
-                if (monster.VNum == 333)
-                {
-                    monster.IsHostile = true;
-                    monster.IsBonus = false;
-                }
-                else
-                {
-                    monster.IsHostile = false;
-                    monster.IsBonus = true;
-                }
-                _mapMonsters.Add(monster);
-                _allMonsters.Add(monster);
-                _currentMap.SummonMonsters.Add(monster);
-            }
-            else if (_currentEventName == "OnDeath" || _currentEventName == "OnFirstEnable")
-            {
-                monster.IsBonus = true;
-                monster.IsHostile = true;
-                AddEventToCurrentTarget("SummonMonster", monster);
-                _allMonsters.Add(monster);
-                return;
-            }
-            else if (_currentEventName == "OnMapClean")
-            {
-                _currentMap.SummonMonsters.Add(monster);
-                _allMonsters.Add(monster);
-            }
-        }
+            _allMonsters.Add(monster);
 
-        private bool DetermineIsProtected(InPacket npcPacket)
-        {
-            return npcPacket.VNum == 320;
+            if (_flag1)
+            {
+                _currentMap.SummonMonsters.Add(monster);
+                _mapMonsters.Add(monster);
+            }
+            else if (_inOnFirstEnable)
+            {
+                _currentMap.OnFirstEnableEvents.Add(new TimeSpaceEvent { Type = "SummonMonster", Data = monster });
+            }
+            else if (_lastDeadMonster != null)
+            {
+                _lastDeadMonster.OnDeathEvents.Add(new TimeSpaceEvent { Type = "SummonMonster", Data = monster });
+            }
+            else
+            {
+                _currentMap.OnMoveOnMap.Add(new TimeSpaceEvent { Type = "SummonMonster", Data = monster });
+                _mapMonsters.Add(monster);
+            }
         }
 
         private void HandleObjectSummon(InPacket packet)
@@ -388,13 +290,30 @@ namespace NosTaleTimeSpaceParser.Services
 
             _currentMap.ProcessedButtons.Add(packet.EntityId);
 
+            short enableVNum, disableVNum;
+            switch (packet.VNum)
+            {
+                case 1000:
+                    enableVNum = 1045;
+                    disableVNum = 1000;
+                    break;
+                case 1057:
+                    enableVNum = 1057;
+                    disableVNum = 1057;
+                    break;
+                default:
+                    enableVNum = (short)(packet.VNum + 1);
+                    disableVNum = (short)packet.VNum;
+                    break;
+            }
+
             var button = new TimeSpaceButton
             {
-                Id = packet.EntityId,
+                Id = _buttonIdCounter++,
                 PositionX = (short)packet.PositionX,
                 PositionY = (short)packet.PositionY,
-                VNumEnabled = (short)packet.VNum,
-                VNumDisabled = (short)(packet.VNum == 1045 ? 1000 : packet.VNum - 45),
+                VNumEnabled = enableVNum,
+                VNumDisabled = disableVNum,
                 OnFirstEnable = new List<TimeSpaceEvent>()
             };
 
@@ -409,8 +328,7 @@ namespace NosTaleTimeSpaceParser.Services
                 if (monster != null && !monster.IsDead)
                 {
                     monster.IsDead = true;
-                    _currentTarget = monster;
-                    _currentEventName = "OnDeath";
+                    _lastDeadMonster = monster;
                 }
             }
         }
@@ -418,18 +336,21 @@ namespace NosTaleTimeSpaceParser.Services
         private void HandleMapClear()
         {
             foreach (var monster in _mapMonsters.Where(m => !m.IsDead))
-            {
                 monster.IsDead = true;
-            }
 
-            _currentTarget = _currentMap;
-            _currentEventName = "OnMapClean";
+            if (_flag1)
+                _flag1 = false;
+            else if (_inOnFirstEnable)
+                _currentMap.OnFirstEnableEvents.Add(new TimeSpaceEvent { Type = "OnMapClean", Data = null });
+            else
+                _currentMap.OnMapClean.Add(new TimeSpaceEvent { Type = "OnMapClean", Data = null });
+
+            _lastDeadMonster = null;
         }
 
         private void HandleGpPacket(GpPacket packet)
         {
             var portalKey = $"{packet.PortalId}_{packet.SourceX}_{packet.SourceY}_{packet.Type}";
-
             if (_currentMap.ProcessedPortals.Contains(portalKey))
                 return;
 
@@ -437,16 +358,35 @@ namespace NosTaleTimeSpaceParser.Services
 
             if (packet.Type >= 2)
             {
-                var changeEvent = new TimeSpaceEvent
+                var changeEvent = new TimeSpaceEvent { Type = "ChangePortalType", PortalId = packet.PortalId, Value = packet.Type };
+                if (_inOnFirstEnable)
                 {
-                    Type = "ChangePortalType",
-                    PortalId = packet.PortalId,
-                    Value = packet.Type
-                };
-
-                AddEventToCurrentTarget("ChangePortalType", changeEvent);
-                AddEventToCurrentTarget("RefreshMapItems", null);
+                    _currentMap.OnFirstEnableEvents.Add(changeEvent);
+                    _currentMap.OnFirstEnableEvents.Add(new TimeSpaceEvent { Type = "RefreshMapItems" });
+                }
+                else
+                {
+                    _currentMap.OnMapClean.Add(changeEvent);
+                    _currentMap.OnMapClean.Add(new TimeSpaceEvent { Type = "RefreshMapItems" });
+                }
                 return;
+            }
+
+            short toMap;
+            short toX = (short)packet.SourceX;
+            short toY = (short)(packet.SourceY == 1 ? 28 : 1);
+
+            if (packet.Type == 5)
+                toMap = -1;
+            else
+            {
+                var currentMapIndex = _maps.Count - 1;
+                if (packet.SourceY == 1)
+                    toMap = (short)(currentMapIndex + 1);
+                else if (packet.SourceY == 28)
+                    toMap = (short)(currentMapIndex - 1);
+                else
+                    toMap = (short)currentMapIndex;
             }
 
             var portal = new TimeSpacePortal
@@ -455,66 +395,38 @@ namespace NosTaleTimeSpaceParser.Services
                 PositionX = (short)packet.SourceX,
                 PositionY = (short)packet.SourceY,
                 Type = (short)packet.Type,
-                ToMap = (short)CalculateToMap(packet),
-                ToX = (short)packet.SourceX,
-                ToY = (short)(packet.SourceY == 1 ? 28 : 1),
+                ToMap = toMap,
+                ToX = toX,
+                ToY = toY,
                 OnTraversalEvents = new List<TimeSpaceEvent>()
             };
 
             if (packet.Type == 5)
-            {
-                portal.ToMap = -1;
                 portal.OnTraversalEvents.Add(new TimeSpaceEvent { Type = "End", Value = 5 });
-            }
 
-            if (!_currentMap.SpawnPortals.Any(p => p.IdOnMap == portal.IdOnMap && p.PositionX == portal.PositionX && p.PositionY == portal.PositionY))
-            {
-                _currentMap.SpawnPortals.Add(portal);
-            }
-        }
-
-        private int CalculateToMap(GpPacket gp)
-        {
-            var currentMapIndex = _maps.Count - 1;
-
-            if (gp.Type == 5) return -1;
-
-            if (gp.SourceY == 1)
-                return currentMapIndex + 1;
-            else if (gp.SourceY == 28)
-                return currentMapIndex - 1;
-
-            return currentMapIndex;
+            _currentMap.SpawnPortals.Add(portal);
         }
 
         private void HandleMsgPacket(MsgPacket packet)
         {
-            var message = new TimeSpaceMessage
-            {
-                Value = packet.Message,
-                Type = (byte)packet.Type
-            };
+            var message = new TimeSpaceMessage { Value = packet.Message, Type = (byte)packet.Type };
 
             if (_flag1)
-            {
                 _currentMap.SendMessages.Add(message);
-            }
+            else if (_inOnFirstEnable)
+                _currentMap.OnFirstEnableEvents.Add(new TimeSpaceEvent { Type = "SendMessage", Data = message });
             else
-            {
-                AddEventToCurrentTarget("SendMessage", message);
-            }
+                _currentMap.OnMapClean.Add(new TimeSpaceEvent { Type = "SendMessage", Data = message });
         }
 
         private void HandleNpcReqPacket(NpcReqPacket packet)
         {
             if (_flag1)
-            {
                 _currentMap.NpcDialogs.Add(packet.DialogId);
-            }
+            else if (_inOnFirstEnable)
+                _currentMap.OnFirstEnableEvents.Add(new TimeSpaceEvent { Type = "NpcDialog", Data = packet.DialogId });
             else
-            {
-                AddEventToCurrentTarget("NpcDialog", packet.DialogId);
-            }
+                _currentMap.OnMapClean.Add(new TimeSpaceEvent { Type = "NpcDialog", Data = packet.DialogId });
         }
 
         private void HandleEvntPacket(EvntPacket packet)
@@ -522,13 +434,19 @@ namespace NosTaleTimeSpaceParser.Services
             switch (packet.Type)
             {
                 case 1:
-                    if (packet.Time1 == packet.Time2 && _flag1)
+                    if (packet.Time1 == packet.Time2)
                     {
-                        _currentMap.GenerateClock = packet.Time1;
-                        _currentMap.HasStartClock = true;
+                        if (_flag1)
+                        {
+                            _currentMap.GenerateClock = packet.Time1;
+                            _currentMap.HasStartClock = true;
+                        }
+                        else
+                        {
+                            _currentMap.OnMoveOnMap.Add(new TimeSpaceEvent { Type = "GenerateClock", Value = packet.Time1 });
+                        }
                     }
                     break;
-
                 case 3:
                     if (packet.Time1 == packet.Time2 && _flag1)
                     {
@@ -541,28 +459,15 @@ namespace NosTaleTimeSpaceParser.Services
 
         private void HandleOutPacket(OutPacket packet)
         {
-            if (packet.Type == 3)
-            {
-                if (!_flag3)
-                {
-                    _flag3 = true;
-                    AddEventToCurrentTarget("ClearMonster", null);
-                }
-            }
+            if (packet.Type == 9)
+                _inOnFirstEnable = true;
         }
 
         private void HandlePreqPacket()
         {
-            if (_mapMonsters.Any(m => !m.IsDead))
-            {
-                foreach (var monster in _mapMonsters.Where(m => !m.IsDead))
-                {
-                    monster.IsDead = true;
-                }
-
-                _currentTarget = _currentMap;
-                _currentEventName = "OnMapClean";
-            }
+            _flag1 = false;
+            _inOnFirstEnable = false;
+            _lastDeadMonster = null;
         }
 
         private void HandleEffPacket(EffPacket packet)
@@ -572,14 +477,10 @@ namespace NosTaleTimeSpaceParser.Services
                 var monster = _allMonsters.FirstOrDefault(m => m.EntityId == packet.EntityId);
                 if (monster != null)
                 {
-                    if (packet.EffectId == 824 && !monster.IsTarget)
-                    {
+                    if (packet.EffectId == 824)
                         monster.IsTarget = true;
-                    }
-                    if (packet.EffectId == 826 && !monster.IsBonus)
-                    {
+                    if (packet.EffectId == 826)
                         monster.IsBonus = true;
-                    }
                 }
             }
         }
@@ -587,206 +488,142 @@ namespace NosTaleTimeSpaceParser.Services
         private void HandleSendPacket(string packet)
         {
             if (_flag1)
-            {
                 _currentMap.SendPackets.Add(packet);
-            }
+            else if (_inOnFirstEnable)
+                _currentMap.OnFirstEnableEvents.Add(new TimeSpaceEvent { Type = "SendPacket", Data = packet });
+            else if (_lastDeadMonster != null)
+                _lastDeadMonster.OnDeathEvents.Add(new TimeSpaceEvent { Type = "SendPacket", Data = packet });
             else
-            {
-                AddEventToCurrentTarget("SendPacket", packet);
-            }
-        }
-
-        private void AddEventToCurrentTarget(string eventType, object data)
-        {
-            var evt = new TimeSpaceEvent { Type = eventType, Data = data };
-
-            if (_currentTarget is TimeSpaceMap map)
-            {
-                if (_currentEventName == "OnCharacterDiscoveringMap")
-                {
-                    map.OnCharacterDiscoveringMap.Add(evt);
-                }
-                else if (_currentEventName == "OnMoveOnMap")
-                {
-                    map.OnMoveOnMap.Add(evt);
-                }
-                else if (_currentEventName == "OnMapClean")
-                {
-                    map.OnMapClean.Add(evt);
-                }
-            }
-            else if (_currentTarget is TimeSpaceMonster monster)
-            {
-                monster.OnDeathEvents.Add(evt);
-            }
-            else if (_currentTarget is TimeSpaceButton button)
-            {
-                button.OnFirstEnable.Add(evt);
-            }
-            else if (_currentTarget is TimeSpacePortal portal)
-            {
-                portal.OnTraversalEvents.Add(evt);
-            }
+                _currentMap.OnMapClean.Add(new TimeSpaceEvent { Type = "SendPacket", Data = packet });
         }
 
         private void GenerateXmlStructure()
         {
             var createMaps = new List<CreateMap>();
-
             foreach (var mapEntry in _maps.OrderBy(m => m.Key))
             {
                 var map = mapEntry.Value;
-                var createMap = new CreateMap
-                {
-                    Map = map.Id,
-                    VNum = map.VNum,
-                    IndexX = (byte)map.IndexX,
-                    IndexY = (byte)map.IndexY
-                };
-
+                var createMap = new CreateMap { Map = map.Id, VNum = map.VNum, IndexX = (byte)map.IndexX, IndexY = (byte)map.IndexY };
                 GenerateOnCharacterDiscoveringMap(createMap, map);
                 GenerateOnMoveOnMap(createMap, map);
                 GenerateSpawnButtons(createMap, map);
                 GenerateSpawnPortals(createMap, map);
-
                 createMaps.Add(createMap);
             }
-
             _model.InstanceEvents.CreateMap = createMaps.ToArray();
         }
 
         private void GenerateOnCharacterDiscoveringMap(CreateMap createMap, TimeSpaceMap map)
         {
-            if (map.NpcDialogs.Any() || map.SendMessages.Any() || map.SendPackets.Any() ||
-                map.SummonNpcs.Any() || (map.Id == 0 && map.SpawnPortals.Any()))
+            if (map.NpcDialogs.Any() || map.SendMessages.Any() || map.SendPackets.Any() || map.SummonNpcs.Any() || map.SummonMonsters.Any() || (map.Id == 0 && map.SpawnPortals.Any()))
             {
                 var discovering = new OnCharacterDiscoveringMap();
-
                 discovering.NpcDialog = map.NpcDialogs.Select(d => new NpcDialog { Value = d }).ToArray();
                 discovering.SendMessage = map.SendMessages.Select(m => new SendMessage { Value = m.Value, Type = m.Type }).ToArray();
                 discovering.SendPacket = map.SendPackets.Select(p => new SendPacket { Value = p }).ToArray();
-                discovering.SummonNpc = map.SummonNpcs.Select(n => new SummonNpc
-                {
-                    VNum = n.VNum,
-                    PositionX = n.PositionX,
-                    PositionY = n.PositionY,
-                    Move = n.Move,
-                    IsProtected = n.IsProtected
-                }).ToArray();
-
+                discovering.SummonNpc = map.SummonNpcs.Select(n => new SummonNpc { VNum = n.VNum, PositionX = n.PositionX, PositionY = n.PositionY, Move = n.Move, IsProtected = n.IsProtected }).ToArray();
+                discovering.SummonMonster = map.SummonMonsters.Select(m => new SummonMonster { VNum = m.VNum, PositionX = m.PositionX, PositionY = m.PositionY, Move = m.Move, IsBonus = m.IsBonus, IsHostile = m.IsHostile, OnDeath = GenerateOnDeath(m) }).ToArray();
                 if (map.Id == 0)
-                {
-                    discovering.SpawnPortal = map.SpawnPortals.Take(1).Select(p => new SpawnPortal
-                    {
-                        IdOnMap = p.IdOnMap,
-                        PositionX = p.PositionX,
-                        PositionY = p.PositionY,
-                        Type = p.Type,
-                        ToMap = p.ToMap,
-                        ToX = p.ToX,
-                        ToY = p.ToY
-                    }).ToArray();
-                }
-
+                    discovering.SpawnPortal = map.SpawnPortals.Take(1).Select(p => new SpawnPortal { IdOnMap = p.IdOnMap, PositionX = p.PositionX, PositionY = p.PositionY, Type = p.Type, ToMap = p.ToMap, ToX = p.ToX, ToY = p.ToY }).ToArray();
                 createMap.OnCharacterDiscoveringMap = discovering;
             }
         }
 
         private void GenerateOnMoveOnMap(CreateMap createMap, TimeSpaceMap map)
         {
-            var moveOnMapList = new List<OnMoveOnMap>();
-            var moveOnMap = new OnMoveOnMap();
-
-            if (map.SummonMonsters.Any())
+            if (map.OnMoveOnMap.Any() || map.GenerateClock > 0 || map.OnMapClean.Any())
             {
-                moveOnMap.SummonMonster = map.SummonMonsters.Select(m => new SummonMonster
-                {
-                    VNum = m.VNum,
-                    PositionX = m.PositionX,
-                    PositionY = m.PositionY,
-                    Move = m.Move,
-                    IsBonus = m.IsBonus,
-                    IsHostile = m.IsHostile,
-                    OnDeath = GenerateOnDeath(m)
-                }).ToArray();
-            }
-
-            if (map.GenerateClock > 0)
-            {
-                moveOnMap.GenerateClock = new GenerateClock { Value = map.GenerateClock };
-            }
-
-            if (map.HasStartClock)
-            {
-                moveOnMap.StartClock = new StartClock();
-            }
-
-            if (map.OnMapClean.Any())
-            {
-                var onMapClean = new OnMapClean();
-
-                var changePortalTypes = new List<ChangePortalType>();
+                var moveOnMapList = new List<OnMoveOnMap>();
+                var moveOnMap = new OnMoveOnMap();
+                var summonMonsters = new List<SummonMonster>();
                 var sendMessages = new List<SendMessage>();
-                var npcDialogs = new List<NpcDialog>();
-                bool hasRefreshMapItems = false;
+                var sendPackets = new List<SendPacket>();
 
-                foreach (var evt in map.OnMapClean)
+                foreach (var evt in map.OnMoveOnMap)
                 {
                     switch (evt.Type)
                     {
-                        case "ChangePortalType":
-                            if (evt.Data is TimeSpaceEvent changeEvt)
-                            {
-                                changePortalTypes.Add(new ChangePortalType
-                                {
-                                    IdOnMap = changeEvt.PortalId,
-                                    Type = (sbyte)changeEvt.Value
-                                });
-                            }
+                        case "SummonMonster":
+                            if (evt.Data is TimeSpaceMonster m)
+                                summonMonsters.Add(new SummonMonster { VNum = m.VNum, PositionX = m.PositionX, PositionY = m.PositionY, Move = m.Move, IsBonus = m.IsBonus, IsHostile = m.IsHostile, OnDeath = GenerateOnDeath(m) });
                             break;
                         case "SendMessage":
                             if (evt.Data is TimeSpaceMessage msg)
-                            {
                                 sendMessages.Add(new SendMessage { Value = msg.Value, Type = msg.Type });
-                            }
                             break;
-                        case "NpcDialog":
-                            if (evt.Data is int dialogId)
-                            {
-                                npcDialogs.Add(new NpcDialog { Value = dialogId });
-                            }
+                        case "SendPacket":
+                            if (evt.Data is string packet)
+                                sendPackets.Add(new SendPacket { Value = packet });
                             break;
-                        case "RefreshMapItems":
-                            hasRefreshMapItems = true;
+                        case "GenerateClock":
+                            moveOnMap.GenerateClock = new GenerateClock { Value = evt.Value };
                             break;
                     }
                 }
 
-                onMapClean.ChangePortalType = changePortalTypes.ToArray();
-                onMapClean.SendMessage = sendMessages.ToArray();
-                onMapClean.NpcDialog = npcDialogs.ToArray();
+                moveOnMap.SummonMonster = summonMonsters.ToArray();
+                moveOnMap.SendMessage = sendMessages.ToArray();
+                moveOnMap.SendPacket = sendPackets.ToArray();
+                if (map.GenerateClock > 0)
+                    moveOnMap.GenerateClock = new GenerateClock { Value = map.GenerateClock };
+                if (map.HasStartClock)
+                    moveOnMap.StartClock = new StartClock();
+                if (map.OnMapClean.Any())
+                    moveOnMap.OnMapClean = GenerateOnMapClean(map.OnMapClean);
+                moveOnMapList.Add(moveOnMap);
+                createMap.OnMoveOnMap = moveOnMapList.ToArray();
+            }
+        }
 
-                if (hasRefreshMapItems)
+        private OnMapClean GenerateOnMapClean(List<TimeSpaceEvent> events)
+        {
+            var onMapClean = new OnMapClean();
+            var changePortalTypes = new List<ChangePortalType>();
+            var sendMessages = new List<SendMessage>();
+            var npcDialogs = new List<NpcDialog>();
+            var sendPackets = new List<SendPacket>();
+            bool hasRefreshMapItems = false;
+
+            foreach (var evt in events)
+            {
+                switch (evt.Type)
                 {
-                    onMapClean.RefreshMapItems = new object();
+                    case "ChangePortalType":
+                        changePortalTypes.Add(new ChangePortalType { IdOnMap = evt.PortalId, Type = (sbyte)evt.Value });
+                        break;
+                    case "SendMessage":
+                        if (evt.Data is TimeSpaceMessage msg)
+                            sendMessages.Add(new SendMessage { Value = msg.Value, Type = msg.Type });
+                        break;
+                    case "NpcDialog":
+                        if (evt.Data is int dialogId)
+                            npcDialogs.Add(new NpcDialog { Value = dialogId });
+                        break;
+                    case "SendPacket":
+                        if (evt.Data is string packet)
+                            sendPackets.Add(new SendPacket { Value = packet });
+                        break;
+                    case "RefreshMapItems":
+                        hasRefreshMapItems = true;
+                        break;
                 }
-
-                moveOnMap.OnMapClean = onMapClean;
             }
 
-            moveOnMapList.Add(moveOnMap);
-            createMap.OnMoveOnMap = moveOnMapList.ToArray();
+            onMapClean.ChangePortalType = changePortalTypes.ToArray();
+            onMapClean.SendMessage = sendMessages.ToArray();
+            onMapClean.NpcDialog = npcDialogs.ToArray();
+            onMapClean.SendPacket = sendPackets.ToArray();
+            if (hasRefreshMapItems)
+                onMapClean.RefreshMapItems = new object();
+            return onMapClean;
         }
 
         private OnDeath GenerateOnDeath(TimeSpaceMonster monster)
         {
             if (!monster.OnDeathEvents.Any())
-            {
                 return null;
-            }
 
             var onDeath = new OnDeath();
-
             var summonMonsters = new List<SummonMonster>();
             var changePortalTypes = new List<ChangePortalType>();
             var sendMessages = new List<SendMessage>();
@@ -800,47 +637,22 @@ namespace NosTaleTimeSpaceParser.Services
                 {
                     case "SummonMonster":
                         if (evt.Data is TimeSpaceMonster m)
-                        {
-                            summonMonsters.Add(new SummonMonster
-                            {
-                                VNum = m.VNum,
-                                PositionX = m.PositionX,
-                                PositionY = m.PositionY,
-                                Move = m.Move,
-                                IsBonus = m.IsBonus,
-                                IsHostile = m.IsHostile
-                            });
-                        }
+                            summonMonsters.Add(new SummonMonster { VNum = m.VNum, PositionX = m.PositionX, PositionY = m.PositionY, Move = m.Move, IsBonus = m.IsBonus, IsHostile = m.IsHostile, OnDeath = GenerateOnDeath(m) });
                         break;
                     case "ChangePortalType":
-                        if (evt.Data is TimeSpaceEvent changeEvt)
-                        {
-                            changePortalTypes.Add(new ChangePortalType
-                            {
-                                IdOnMap = changeEvt.PortalId,
-                                Type = (sbyte)changeEvt.Value
-                            });
-                        }
-                        else
-                        {
-                            changePortalTypes.Add(new ChangePortalType
-                            {
-                                IdOnMap = evt.PortalId,
-                                Type = (sbyte)evt.Value
-                            });
-                        }
+                        changePortalTypes.Add(new ChangePortalType { IdOnMap = evt.PortalId, Type = (sbyte)evt.Value });
                         break;
                     case "SendMessage":
                         if (evt.Data is TimeSpaceMessage msg)
-                        {
                             sendMessages.Add(new SendMessage { Value = msg.Value, Type = msg.Type });
-                        }
                         break;
                     case "NpcDialog":
                         if (evt.Data is int dialogId)
-                        {
                             npcDialogs.Add(new NpcDialog { Value = dialogId });
-                        }
+                        break;
+                    case "SendPacket":
+                        if (evt.Data is string packet)
+                            sendPackets.Add(new SendPacket { Value = packet });
                         break;
                     case "RefreshMapItems":
                         hasRefreshMapItems = true;
@@ -853,12 +665,8 @@ namespace NosTaleTimeSpaceParser.Services
             onDeath.SendMessage = sendMessages.ToArray();
             onDeath.NpcDialog = npcDialogs.ToArray();
             onDeath.SendPacket = sendPackets.ToArray();
-
             if (hasRefreshMapItems)
-            {
                 onDeath.RefreshMapItems = new object();
-            }
-
             return onDeath;
         }
 
@@ -873,17 +681,65 @@ namespace NosTaleTimeSpaceParser.Services
                     PositionY = b.PositionY,
                     VNumEnabled = b.VNumEnabled,
                     VNumDisabled = b.VNumDisabled,
-                    OnFirstEnable = b.OnFirstEnable.Any() ? new OnFirstEnable() : null
+                    OnFirstEnable = GenerateOnFirstEnable(map)
                 }).ToArray();
             }
+        }
+
+        private OnFirstEnable GenerateOnFirstEnable(TimeSpaceMap map)
+        {
+            if (!map.OnFirstEnableEvents.Any())
+                return null;
+
+            var onFirstEnable = new OnFirstEnable();
+            var summonMonsters = new List<SummonMonster>();
+            var sendMessages = new List<SendMessage>();
+            var sendPackets = new List<SendPacket>();
+            var npcDialogs = new List<NpcDialog>();
+            OnMapClean onMapClean = null;
+
+            foreach (var evt in map.OnFirstEnableEvents)
+            {
+                switch (evt.Type)
+                {
+                    case "SummonMonster":
+                        if (evt.Data is TimeSpaceMonster m)
+                            summonMonsters.Add(new SummonMonster { VNum = m.VNum, PositionX = m.PositionX, PositionY = m.PositionY, Move = m.Move, IsBonus = m.IsBonus, IsHostile = m.IsHostile, OnDeath = GenerateOnDeath(m) });
+                        break;
+                    case "SendMessage":
+                        if (evt.Data is TimeSpaceMessage msg)
+                            sendMessages.Add(new SendMessage { Value = msg.Value, Type = msg.Type });
+                        break;
+                    case "SendPacket":
+                        if (evt.Data is string packet)
+                            sendPackets.Add(new SendPacket { Value = packet });
+                        break;
+                    case "NpcDialog":
+                        if (evt.Data is int dialogId)
+                            npcDialogs.Add(new NpcDialog { Value = dialogId });
+                        break;
+                    case "OnMapClean":
+                        var mapCleanEvents = map.OnFirstEnableEvents.Where(e => e.Type == "ChangePortalType" || e.Type == "RefreshMapItems" || e.Type == "SendMessage" || e.Type == "NpcDialog").ToList();
+                        if (mapCleanEvents.Any())
+                            onMapClean = GenerateOnMapClean(mapCleanEvents);
+                        break;
+                }
+            }
+
+            onFirstEnable.SummonMonster = summonMonsters.ToArray();
+            onFirstEnable.SendMessage = sendMessages.ToArray();
+            onFirstEnable.NpcDialog = npcDialogs.ToArray();
+            onFirstEnable.OnMapClean = onMapClean;
+            // IL FAUT AJOUTER SendPacket AU MODÈLE PUIS DÉCOMMENTER :
+            // onFirstEnable.SendPacket = sendPackets.ToArray();
+            return onFirstEnable;
         }
 
         private void GenerateSpawnPortals(CreateMap createMap, TimeSpaceMap map)
         {
             if (map.SpawnPortals.Any())
             {
-                var portalsToAdd = map.Id == 0 ? new List<TimeSpacePortal>() : map.SpawnPortals.ToList();
-
+                var portalsToAdd = map.Id == 0 ? map.SpawnPortals.Skip(1).ToList() : map.SpawnPortals.ToList();
                 if (portalsToAdd.Any())
                 {
                     createMap.SpawnPortal = portalsToAdd.Select(p => new SpawnPortal
@@ -895,16 +751,12 @@ namespace NosTaleTimeSpaceParser.Services
                         ToMap = p.ToMap,
                         ToX = p.ToX,
                         ToY = p.ToY,
-                        OnTraversal = p.OnTraversalEvents.Any() ? new OnTraversal
-                        {
-                            End = p.OnTraversalEvents.Any(e => e.Type == "End") ? new End { Type = 5 } : null
-                        } : null
+                        OnTraversal = p.OnTraversalEvents.Any() ? new OnTraversal { End = p.OnTraversalEvents.Any(e => e.Type == "End") ? new End { Type = 5 } : null } : null
                     }).ToArray();
                 }
             }
         }
 
-        // Classes helper
         private class TimeSpaceMap
         {
             public int Id { get; set; }
@@ -914,6 +766,7 @@ namespace NosTaleTimeSpaceParser.Services
             public List<TimeSpaceEvent> OnCharacterDiscoveringMap { get; set; }
             public List<TimeSpaceEvent> OnMoveOnMap { get; set; }
             public List<TimeSpaceEvent> OnMapClean { get; set; }
+            public List<TimeSpaceEvent> OnFirstEnableEvents { get; set; }
             public List<TimeSpacePortal> SpawnPortals { get; set; }
             public List<TimeSpaceNpc> SummonNpcs { get; set; }
             public List<TimeSpaceMonster> SummonMonsters { get; set; }
