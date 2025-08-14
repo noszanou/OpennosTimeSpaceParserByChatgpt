@@ -4,9 +4,9 @@ Adaptation of a tool originally shared by a contributor known under the pseudony
 
 ## Credits
 
-- Original TimeSpace-Generator by Elendan
+- Original TimeSpace-Generator by Elendan [TimeSpace-Generator](https://github.com/Elendan/TimeSpace-Generator)
 - Contributor known as SEOVA
-- OpenNos XML library
+- OpenNos XML library [OfficialOpenNos](https://github.com/MasterDomino/OfficialOpenNos/tree/StockOpenNos/OpenNos.XMLModel)
 - AI-assisted improvements
 
 ## License
